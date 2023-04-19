@@ -25,6 +25,7 @@ import {
   publishItemById,
   setItemAsTransletedById,
 } from "../services/bulk.service";
+import { mapPagesDataForExcel } from "../services/excel.service";
 
 enum AssetState {
   NOT_UPDATED = "NOT_UPDATED",
@@ -63,16 +64,13 @@ const AssetsImport = () => {
         const fieldsKeys = Object.keys(asset).filter((key) =>
           key.includes(EXCEL_FIELDS_PREFIX)
         );
+        
+        const fieldsToOmit: (keyof ReturnType<typeof mapPagesDataForExcel>[0])[] = ['id', 'name', 'language', 'repository', 'type', 'probableUrl', 'edited'];
 
         // Creating a sanitized copy of the object without some fields.
         const assetWithoutExcelCustomFields = _.omit(asset, [
           ...fieldsKeys,
-          "id",
-          "name",
-          "language",
-          "repository",
-          "type",
-          "edited",
+          ...fieldsToOmit
         ]);
 
         const fields = Object.fromEntries(
@@ -136,11 +134,8 @@ const AssetsImport = () => {
   };
 
   const onDrop = useCallback((acceptedFiles: any) => {
-    // Do something with the files
-
-    const a = readExcelFileAndSetState(acceptedFiles[0]);
+    readExcelFileAndSetState(acceptedFiles[0]);
     setExcelFileName(acceptedFiles[0].name);
-    // console.log("aaa", acceptedFiles);
   }, []);
   const { getRootProps, getInputProps, isDragActive } = useDropzone({ onDrop });
 
