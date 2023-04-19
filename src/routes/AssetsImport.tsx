@@ -1,4 +1,4 @@
-import { CheckIcon, CloseIcon } from "@chakra-ui/icons";
+import { CloseIcon } from "@chakra-ui/icons";
 import {
   Box,
   Button,
@@ -13,19 +13,19 @@ import {
   Thead,
   Tooltip,
   Tr,
-  useToast,
+  useToast
 } from "@chakra-ui/react";
+import _ from "lodash";
 import { useCallback, useState } from "react";
 import { useDropzone } from "react-dropzone";
 import withAuth from "../hoc/withAuth";
-import { readExcelFile } from "../services/files.service";
-import _ from "lodash";
 import { updateItem } from "../services/assets.service";
 import {
   publishItemById,
-  setItemAsTransletedById,
+  setItemAsTransletedById
 } from "../services/bulk.service";
 import { mapPagesDataForExcel } from "../services/excel.service";
+import { readExcelFile } from "../services/files.service";
 
 enum AssetState {
   NOT_UPDATED = "NOT_UPDATED",
