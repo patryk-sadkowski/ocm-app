@@ -13,10 +13,9 @@ import {
   Button,
   Card,
   CardBody,
+  Checkbox,
   Flex,
   Heading,
-  List,
-  ListItem,
   Select,
   Skeleton,
   Stack,
@@ -33,7 +32,10 @@ import {
 } from "@chakra-ui/react";
 import { useCallback, useEffect, useReducer, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { fetchAllItemsOfTypeFromRepositoryIdScroll } from "../services/assets.service";
+import {
+  fetchAllItemsOfTypeFromRepositoryIdScroll,
+  fetchItemByID,
+} from "../services/assets.service";
 import {
   mapImagesDataForExcel,
   mapPagesDataForExcel,
@@ -92,6 +94,7 @@ const Repository = () => {
   const [sites, setSites] = useState<SiteI[]>([]);
   const [activeSite, setActiveSite] = useState<SiteI>();
   const toast = useToast();
+  const [includeTeaserData, setIncludeTeaserData] = useState(false);
 
   const downloadImages = async () => {
     const imageTypesOnly = availableAssetTypes.filter((assetType: AssetTypeI) =>
@@ -176,10 +179,36 @@ const Repository = () => {
       });
     }
 
-    return mapPagesDataForExcel(assetsRes, repositoryName, {
+    const mappedPages = mapPagesDataForExcel(assetsRes, repositoryName, {
       structurePages,
       baseURL: siteVanityDomain,
     });
+
+    if (includeTeaserData) {
+      let mappedPagesWithTeaserMedia = [];
+      for (const page of mappedPages) {
+        if (!page.teaser_media_id) {
+          mappedPagesWithTeaserMedia.push(page);
+          continue;
+        }
+
+        setPagesProgress(`Teaser - Page ${page.name}`)
+        const teaserMedia = await fetchItemByID(page.teaser_media_id);
+        if (teaserMedia?.name) {
+          mappedPagesWithTeaserMedia.push({
+            ...page,
+            teaser_media_name: teaserMedia.name,
+          });
+          continue;
+        }
+
+        mappedPagesWithTeaserMedia.push(page);
+      }
+
+      return mappedPagesWithTeaserMedia;
+    }
+
+    return mappedPages;
   };
 
   type ArrayElementType<T> = T extends Array<infer U> ? U : never;
@@ -376,10 +405,19 @@ const Repository = () => {
                   Download Pages
                 </Button>
 
+                <Button gap={4} variant="outline" disabled={loadingStates.pages}>
+                  <Checkbox
+                    isChecked={includeTeaserData}
+                    onChange={(e) => setIncludeTeaserData(e.target.checked)}
+                  />{" "}
+                  Include teaser data
+                </Button>
+
                 <Skeleton isLoaded={sites.length > 0}>
                   <Select
                     placeholder="Select website"
                     maxW={200}
+                    disabled={loadingStates.pages}
                     value={activeSite?.id}
                     onChange={(e) =>
                       setActiveSite(

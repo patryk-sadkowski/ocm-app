@@ -54,7 +54,7 @@ export interface ItemI {
     page_banner: any;
     page_title: string;
     keywords: string;
-    teaserMedia: {
+    teaser_media: {
       id: string;
       type: string;
       typeCategory: string;

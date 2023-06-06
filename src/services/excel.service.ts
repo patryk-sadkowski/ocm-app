@@ -1,4 +1,5 @@
 import { ItemI } from "../types/repositories";
+import { fetchItemByID } from "./assets.service";
 import { StructurePageI } from "./sites.service";
 
 export const mapImagesDataForExcel = (
@@ -60,6 +61,7 @@ export const mapPagesDataForExcel = (
       fields_teaser_summary: asset?.fields?.teaser_summary,
       fields_teaser_title: asset?.fields?.teaser_title,
       fields_html_content: asset?.fields?.html_content,
+      teaser_media_id: asset?.fields?.teaser_media?.id,
       language: asset?.language,
       repository: repositoryName,
       edited: false,
