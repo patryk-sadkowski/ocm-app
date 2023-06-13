@@ -13,7 +13,7 @@ import {
   Thead,
   Tooltip,
   Tr,
-  useToast
+  useToast,
 } from "@chakra-ui/react";
 import _ from "lodash";
 import { useCallback, useState } from "react";
@@ -22,7 +22,7 @@ import withAuth from "../hoc/withAuth";
 import { updateItem } from "../services/assets.service";
 import {
   publishItemById,
-  setItemAsTransletedById
+  setItemAsTransletedById,
 } from "../services/bulk.service";
 import { mapPagesDataForExcel } from "../services/excel.service";
 import { readExcelFile } from "../services/files.service";
@@ -64,13 +64,24 @@ const AssetsImport = () => {
         const fieldsKeys = Object.keys(asset).filter((key) =>
           key.includes(EXCEL_FIELDS_PREFIX)
         );
-        
-        const fieldsToOmit: (keyof ReturnType<typeof mapPagesDataForExcel>[0])[] = ['id', 'name', 'language', 'repository', 'type', 'probableUrl', 'edited'];
+
+        const fieldsToOmit: (keyof ReturnType<
+          typeof mapPagesDataForExcel
+        >[0])[] = [
+          "id",
+          "name",
+          "language",
+          "repository",
+          "type",
+          "probableUrl",
+          "edited",
+          "teaser_media_id",
+        ];
 
         // Creating a sanitized copy of the object without some fields.
         const assetWithoutExcelCustomFields = _.omit(asset, [
           ...fieldsKeys,
-          ...fieldsToOmit
+          ...fieldsToOmit,
         ]);
 
         const fields = Object.fromEntries(
