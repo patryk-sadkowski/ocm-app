@@ -65,9 +65,9 @@ const AssetsImport = () => {
           key.includes(EXCEL_FIELDS_PREFIX)
         );
 
-        const fieldsToOmit: (keyof ReturnType<
+        const fieldsToOmit: ((keyof ReturnType<
           typeof mapPagesDataForExcel
-        >[0])[] = [
+        >[0] | string))[] = [
           "id",
           "name",
           "language",
@@ -76,6 +76,9 @@ const AssetsImport = () => {
           "probableUrl",
           "edited",
           "teaser_media_id",
+          "referenced_by_id",
+          "referenced_by_language",
+          "referenced_by_name",
         ];
 
         // Creating a sanitized copy of the object without some fields.

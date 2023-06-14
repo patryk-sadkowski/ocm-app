@@ -201,3 +201,25 @@ export const getItemVariations = async (id: string): Promise<Array<any>> => {
   const { data } = await axiosClient(`items/${id}/variations`);
   return data.data[0].items;
 };
+
+
+
+export const getReferencedByForAsset = async (assetId: string, funcToExecuteAfter?: () => void) => {
+  // https://ircxprd01-iroraclecloud.cec.ocp.oraclecloud.com/content/management/api/v1.1/items/COREC007579556A1448AA96ACDC05E45059A?expand=relationships&includeAdditionalData=false&links=none
+  const { data } = await axiosClient(
+    `/items/${assetId}?expand=relationships&includeAdditionalData=false&links=none`
+  );
+
+  // console.log('DATA', data);
+  funcToExecuteAfter && funcToExecuteAfter();
+
+  // const ResponseSchema = z.object({
+  //   hasMore: z.boolean(),
+  //   offset: z.number(),
+  //   count: z.number(),
+  //   limit: z.number(),
+  //   items: ItemsSchema,
+  // });
+
+  return data;
+}

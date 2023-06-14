@@ -32,9 +32,11 @@ import {
 } from "@chakra-ui/react";
 import { useCallback, useEffect, useReducer, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
+import { z } from "zod";
 import {
   fetchAllItemsOfTypeFromRepositoryIdScroll,
   fetchItemByID,
+  getReferencedByForAsset,
 } from "../services/assets.service";
 import {
   mapImagesDataForExcel,
@@ -95,6 +97,9 @@ const Repository = () => {
   const [activeSite, setActiveSite] = useState<SiteI>();
   const toast = useToast();
   const [includeTeaserData, setIncludeTeaserData] = useState(false);
+  const [includeReferencedBy, setIncludeReferencedBy] = useState(false);
+  const [simultaneousRequests, setSimultaneousRequests] = useState(15);
+  const [excludeUnused, setExludeUnused] = useState(false);
 
   const downloadImages = async () => {
     const imageTypesOnly = availableAssetTypes.filter((assetType: AssetTypeI) =>
@@ -192,7 +197,7 @@ const Repository = () => {
           continue;
         }
 
-        setPagesProgress(`Teaser - Page ${page.name}`)
+        setPagesProgress(`Teaser - Page ${page.name}`);
         const teaserMedia = await fetchItemByID(page.teaser_media_id);
         if (teaserMedia?.name) {
           mappedPagesWithTeaserMedia.push({
@@ -262,10 +267,6 @@ const Repository = () => {
       return saveJSONToExcelFile(filteredPagesData, `${fileName}.xlsx`);
     }
 
-    const siteVanityDomain = await getSiteVanityDomain(
-      activeSite?.id,
-      activeSite?.name
-    );
     const typesNamesToDownload = assetsToDownload.map((type) => type.name);
     const assetsRes = await fetchAllItemsOfTypeFromRepositoryIdScroll(
       repositoryId,
@@ -278,30 +279,87 @@ const Repository = () => {
     if (!assetsRes) {
       throw new Error("No assets");
     }
-    console.log("ASSETS", assetsRes);
+    console.log("IMAGES", assetsRes);
 
-    const structurePages = await getStructureJSON(siteVanityDomain);
+    const isImagesRequest = typesNamesToDownload.find((typeName) =>
+      typeName.toLowerCase().includes("image")
+    );
+
+    if (isImagesRequest) {
+      const preparedAssets = mapImagesDataForExcel(assetsRes, repositoryName);
+
+      if (includeReferencedBy) {
+        const referencedByData = await getReferencedBy(
+          preparedAssets,
+          setImageProgress,
+          simultaneousRequests
+        );
+
+        console.log("REFERENCED BY DATA", referencedByData);
+
+        const mappedPreparedAssets = referencedByData.flatMap((asset) => {
+          const assetInPreparedAssets = preparedAssets.find(
+            (a) => a.id === asset.id
+          );
+
+          return asset.referencedBy.map((referencedBy) => {
+            return {
+              ...assetInPreparedAssets,
+              referenced_by_id: referencedBy.id,
+              referenced_by_name: referencedBy.name,
+              referenced_by_language: referencedBy.language,
+            };
+          });
+        });
+
+        const preparedAssetsWithoutReferencedBy = preparedAssets.filter(
+          (asset) =>
+            mappedPreparedAssets.find((a) => a.id === asset.id) === undefined
+        );
+        const combined = [
+          ...preparedAssetsWithoutReferencedBy,
+          ...mappedPreparedAssets,
+        ];
+
+        console.log("BOOO", combined);
+        setImageProgress("");
+        return saveJSONToExcelFile(
+          excludeUnused ? mappedPreparedAssets : combined,
+          `${fileName}.xlsx`
+        );
+      }
+
+      setImageProgress("");
+      return saveJSONToExcelFile(preparedAssets, `${fileName}.xlsx`);
+    }
+
+    // Not images request
+    const siteVanityDomain = await getSiteVanityDomain(
+      activeSite?.id,
+      activeSite?.name
+    );
+    const structurePages = await getStructureJSON(siteVanityDomain).catch(
+      (_err) => {
+        return [];
+      }
+    );
+
     if (structurePages.length < 1) {
       toast({
         title: "Warning",
         description:
           "Could not fetch the structure (probableUrl will not be generated). Was the site published?",
         status: "warning",
-        duration: null,
+
         isClosable: true,
       });
     }
-    const preparedAssets = typesNamesToDownload.find((typeName) =>
-      typeName.toLowerCase().includes("image")
-    )
-      ? mapImagesDataForExcel(assetsRes, repositoryName)
-      : mapPagesDataForExcel(assetsRes, repositoryName, {
-          structurePages,
-          baseURL: siteVanityDomain,
-        });
 
-    saveJSONToExcelFile(preparedAssets, `${fileName}.xlsx`);
-    setImageProgress("");
+    const preparedAssets = mapPagesDataForExcel(assetsRes, repositoryName, {
+      structurePages,
+      baseURL: siteVanityDomain,
+    });
+    return saveJSONToExcelFile(preparedAssets, `${fileName}.xlsx`);
   };
 
   const getAvailableAssetTypesAndSites = useCallback(async () => {
@@ -394,7 +452,16 @@ const Repository = () => {
                 </Text>
               </Skeleton>
 
-              <Flex direction="row" alignItems="center" gap={4} marginTop={4}>
+              <Flex
+                direction="row"
+                alignItems="center"
+                gap={4}
+                marginTop={4}
+                flexDirection={{
+                  base: "column",
+                  md: "row",
+                }}
+              >
                 <Button
                   leftIcon={<DownloadIcon />}
                   isDisabled={loadingStates.types}
@@ -405,7 +472,11 @@ const Repository = () => {
                   Download Pages
                 </Button>
 
-                <Button gap={4} variant="outline" disabled={loadingStates.pages}>
+                <Button
+                  gap={4}
+                  variant="outline"
+                  disabled={loadingStates.pages}
+                >
                   <Checkbox
                     isChecked={includeTeaserData}
                     onChange={(e) => setIncludeTeaserData(e.target.checked)}
@@ -465,16 +536,92 @@ const Repository = () => {
                     .join(", ")}
                 </Text>
               </Skeleton>
-              <Button
+              <Flex
+                alignItems="center"
+                gap={4}
                 marginTop={4}
-                leftIcon={<DownloadIcon />}
-                isDisabled={loadingStates.types}
-                onClick={downloadImages}
-                isLoading={loadingStates.images}
-                loadingText={imageProgress}
+                flexDirection={{
+                  base: "column",
+                  md: "row",
+                }}
               >
-                Download Images
-              </Button>
+                <Button
+                  leftIcon={<DownloadIcon />}
+                  isDisabled={loadingStates.types}
+                  onClick={downloadImages}
+                  isLoading={loadingStates.images}
+                  loadingText={imageProgress}
+                  width={{
+                    base: "100%",
+                    md: "auto",
+                  }}
+                >
+                  Download Images
+                </Button>
+                <Button
+                  gap={4}
+                  variant="outline"
+                  isDisabled={loadingStates.types || loadingStates.images}
+                  width={{
+                    base: "100%",
+                    md: "auto",
+                  }}
+                >
+                  <Checkbox
+                    isChecked={includeReferencedBy}
+                    onChange={(e) => setIncludeReferencedBy(e.target.checked)}
+                  />
+                  <div>
+                    Include <i>referenced by</i>
+                  </div>
+                </Button>
+                <Button
+                  width={{
+                    base: "100%",
+                    md: "auto",
+                  }}
+                  gap={4}
+                  variant="outline"
+                  isDisabled={
+                    loadingStates.types ||
+                    loadingStates.images ||
+                    !includeReferencedBy
+                  }
+                >
+                  <Checkbox
+                    isChecked={excludeUnused}
+                    onChange={(e) => setExludeUnused(e.target.checked)}
+                  />
+                  <div>Exclude unused</div>
+                </Button>
+                <Select
+                  width={{
+                    base: "100%",
+                    md: "auto",
+                  }}
+                  isDisabled={loadingStates.types || !includeReferencedBy}
+                  maxW={85}
+                  value={simultaneousRequests}
+                  onChange={(e) =>
+                    setSimultaneousRequests(Number(e.target.value))
+                  }
+                >
+                  <option value={1}>1</option>
+                  <option value={5}>5</option>
+                  <option value={10}>10</option>
+                  <option value={15}>15</option>
+                  <option value={20}>20</option>
+                  <option value={25}>25</option>
+                  <option value={30}>30</option>
+                  <option value={50}>50</option>
+                  <option value={100}>100</option>
+                  <option value={150}>150</option>
+                  <option value={300}>300</option>
+                </Select>
+                <Tooltip label="Change the number of simultaneous requests (referenced by).">
+                  <QuestionIcon />
+                </Tooltip>
+              </Flex>
             </Box>
           </Stack>
         </CardBody>
@@ -535,6 +682,154 @@ const Repository = () => {
       </Button>
     </Box>
   );
+};
+
+const ReferencedBySchema = z.array(
+  z
+    .object({
+      id: z.string(),
+      relationships: z
+        .object({
+          data: z
+            .object({
+              referencedBy: z.array(
+                z
+                  .object({
+                    id: z.string(),
+                  })
+                  .passthrough()
+              ),
+            })
+            .passthrough(),
+        })
+        .passthrough(),
+    })
+    .passthrough()
+);
+
+const getReferencedBy = async (
+  preparedAssets: ReturnType<typeof mapImagesDataForExcel>,
+  setImageProgress: (progressStr: string) => void,
+  numberOfSimultaneousRequests = 5
+) => {
+  let requests = [];
+  let completedRequests = 0;
+  let totalAssets = preparedAssets.length;
+  let results: ReturnType<(typeof ReferencedBySchema)["parse"]> = [];
+  let count = 0;
+  setImageProgress(`Referenced by: ${completedRequests}/${totalAssets}`);
+
+  for (const asset of preparedAssets) {
+    count = count + 1;
+    requests.push(getReferencedByForAsset(asset.id));
+
+    if (requests.length === numberOfSimultaneousRequests) {
+      let responses = await Promise.all(requests);
+      const reponsesParsed = ReferencedBySchema.parse(responses);
+      results = results.concat(reponsesParsed);
+      completedRequests += requests.length;
+      setImageProgress(`Referenced by: ${completedRequests}/${totalAssets}`);
+      requests = [];
+    }
+  }
+
+  // handle any remaining requests
+  if (requests.length > 0) {
+    let responses = await Promise.all(requests);
+    const reponsesParsed = ReferencedBySchema.parse(responses);
+    results = results.concat(reponsesParsed);
+    completedRequests += requests.length;
+    setImageProgress(`${completedRequests}/${totalAssets}`);
+  }
+
+  // RESULTS
+
+  const expandedReferences = await expandReferences(
+    results,
+    setImageProgress,
+    numberOfSimultaneousRequests
+  );
+
+  return expandedReferences;
+};
+
+const expandReferences = async (
+  assets: ReturnType<(typeof ReferencedBySchema)["parse"]>,
+  setProgress: (progressStr: string) => void,
+  numberOfSimultaneousRequests = 5
+) => {
+  // use fetchItemByID to get the full asset data, use numberOfSimultaneousRequests to set the number of simultaneous requests
+  const ResponseSchema = z.array(
+    z
+      .object({
+        id: z.string(),
+        name: z.string(),
+        language: z.string(),
+      })
+      .passthrough()
+  );
+
+  let requests = [];
+  let completedRequests = 0;
+  let results: ReturnType<(typeof ResponseSchema)["parse"]> = [];
+
+  const allReferencedAssetsIds = assets.flatMap((asset) =>
+    asset.relationships.data.referencedBy.map(
+      (referencedAsset) => referencedAsset.id
+    )
+  );
+
+  const uniqueReferencedAssetsIds = [...new Set(allReferencedAssetsIds)];
+  let totalAssets = uniqueReferencedAssetsIds.length;
+  setProgress(`Expanding references: ${completedRequests}/${totalAssets}`);
+
+  for (const referencedAssetId of uniqueReferencedAssetsIds) {
+    requests.push(fetchItemByID(referencedAssetId));
+
+    if (requests.length === numberOfSimultaneousRequests) {
+      let responses = await Promise.all(requests);
+      const reponsesParsed = ResponseSchema.parse(responses);
+      results = results.concat(reponsesParsed);
+      completedRequests += requests.length;
+      setProgress(`Expanding references: ${completedRequests}/${totalAssets}`);
+      requests = [];
+    }
+  }
+
+  // handle any remaining requests
+  if (requests.length > 0) {
+    let responses = await Promise.all(requests);
+    const reponsesParsed = ResponseSchema.parse(responses);
+    results = results.concat(reponsesParsed);
+    completedRequests += requests.length;
+    setProgress(`Expanding references: ${completedRequests}/${totalAssets}`);
+  }
+
+  // RESULTS
+
+  const mappedData = assets.map((asset) => {
+    const referencedBy = asset.relationships.data.referencedBy.map(
+      (referencedAsset) => {
+        const foundAsset = results.find(
+          (result) => result.id === referencedAsset.id
+        );
+
+        return {
+          id: foundAsset?.id,
+          name: foundAsset?.name,
+          language: foundAsset?.language,
+        };
+      }
+    );
+
+    return {
+      id: asset.id,
+      name: asset.name || "N/A",
+      referencedBy,
+    };
+  });
+
+  return mappedData;
 };
 
 export default Repository;
