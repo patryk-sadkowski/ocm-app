@@ -1,7 +1,8 @@
-import { CloseIcon } from "@chakra-ui/icons";
+import { CloseIcon, QuestionIcon } from "@chakra-ui/icons";
 import {
   Box,
   Button,
+  Checkbox,
   Flex,
   Progress,
   Table,
@@ -38,6 +39,7 @@ interface ExcelItem {
   name: string;
   edited: boolean;
   language: string;
+  fields_flag_regionalize?: boolean;
   fields_image_alt?: string;
   fields_meta_title?: string;
   fields_page_title?: string;
@@ -216,15 +218,17 @@ const AssetsImport = () => {
       {assetsUpdateLoading && excelData && (
         <Progress size="xs" value={percentageProgress * 100} />
       )}
+      {excelData && excelData.length > 0 && <p>This table doesn't show all columns - it's just for preview purposes.</p>}
       {excelData && excelData.length > 0 && (
         <TableContainer>
           <Table variant="simple">
             <Thead>
               <Tr>
-                <Th>State</Th>
+                <Th><Tooltip label={'This column shows update progress. Green means that asset was updated correctly. Red indicates an error.'}><div>State <QuestionIcon /></div></Tooltip></Th>
                 <Th>ID</Th>
                 <Th>Language</Th>
                 <Th>Asset name</Th>
+               
                 {excelData?.find((item) => item.fields_image_alt) && (
                   <Th>Alt</Th>
                 )}
@@ -232,7 +236,10 @@ const AssetsImport = () => {
                   <Th>Description</Th>
                 )}
                 {excelData?.find((item) => item.fields_page_title) && (
-                  <Th>Title</Th>
+                  <Th>Page Title</Th>
+                )}
+                 {excelData?.find((item) => item.fields_flag_regionalize) && (
+                  <Th>Regionalize</Th>
                 )}
               </Tr>
             </Thead>
@@ -292,6 +299,16 @@ const AssetsImport = () => {
                       <Tooltip label={asset.fields_page_title}>
                         <Box>{asset.fields_page_title.substring(0, 10)}...</Box>
                       </Tooltip>
+                    </Td>
+                  )}
+                  {!asset.fields_page_title && asset.fields_flag_regionalize && (
+                    <Td>
+                      -
+                    </Td>
+                  )}
+                  {asset.fields_flag_regionalize && (
+                    <Td>
+                        <Checkbox isChecked={asset.fields_flag_regionalize} style={{cursor: 'auto'}}/>
                     </Td>
                   )}
                 </Tr>

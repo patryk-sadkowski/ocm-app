@@ -45,6 +45,8 @@ export const mapPagesDataForExcel = (
           .join("/")
       : "";
 
+    console.log('PAGE', asset)
+
     return {
       id: asset.id,
       name: asset.name,
@@ -64,6 +66,7 @@ export const mapPagesDataForExcel = (
       teaser_media_id: asset?.fields?.teaser_media?.id,
       language: asset?.language,
       repository: repositoryName,
+      fields_flag_regionalize: asset?.fields?.flag_regionalize,
       edited: false,
     };
   });
