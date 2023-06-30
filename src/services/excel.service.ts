@@ -45,7 +45,6 @@ export const mapPagesDataForExcel = (
           .join("/")
       : "";
 
-    console.log('PAGE', asset)
 
     return {
       id: asset.id,

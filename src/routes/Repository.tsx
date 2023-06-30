@@ -423,8 +423,6 @@ const Repository = () => {
     if (!loadingStates.types || availableAssetTypes.length < 1) {
       getAvailableAssetTypesAndSites();
     }
-    console.log('BIBIB', availableAssetTypes)
-
   }, [
     getAvailableAssetTypesAndSites,
     availableAssetTypes.length,
