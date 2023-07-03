@@ -308,6 +308,7 @@ const Repository = () => {
               referenced_by_id: referencedBy.id,
               referenced_by_name: referencedBy.name,
               referenced_by_language: referencedBy.language,
+              referenced_by_type: referencedBy.type
             };
           });
         });
@@ -766,6 +767,7 @@ const expandReferences = async (
         id: z.string(),
         name: z.string(),
         language: z.string(),
+        type: z.string(),
       })
       .passthrough()
   );
@@ -819,6 +821,7 @@ const expandReferences = async (
           id: foundAsset?.id,
           name: foundAsset?.name,
           language: foundAsset?.language,
+          type: foundAsset?.type
         };
       }
     );

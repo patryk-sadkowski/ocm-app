@@ -81,6 +81,7 @@ const AssetsImport = () => {
           "referenced_by_id",
           "referenced_by_language",
           "referenced_by_name",
+          "referenced_by_type"
         ];
 
         // Creating a sanitized copy of the object without some fields.
