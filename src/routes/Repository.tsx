@@ -303,12 +303,23 @@ const Repository = () => {
           );
 
           return asset.referencedBy.map((referencedBy) => {
-            return {
+            
+
+            return referencedBy.fields ?  {
               ...assetInPreparedAssets,
               referenced_by_id: referencedBy.id,
               referenced_by_name: referencedBy.name,
               referenced_by_language: referencedBy.language,
-              referenced_by_type: referencedBy.type
+              referenced_by_type: referencedBy.type,
+              referenced_by_meta_title: referencedBy.fields.metaTitle,
+              referenced_by_page_title: referencedBy.fields.pageTitle,
+              referenced_by_descriptions: referencedBy.fields.descriptions,
+            } : {
+              ...assetInPreparedAssets,
+              referenced_by_id: referencedBy.id,
+              referenced_by_name: referencedBy.name,
+              referenced_by_language: referencedBy.language,
+              referenced_by_type: referencedBy.type,
             };
           });
         });
@@ -322,7 +333,7 @@ const Repository = () => {
           ...mappedPreparedAssets,
         ];
 
-        console.log("BOOO", combined);
+        console.log("COMBINED: ", combined);
         setImageProgress("");
         return saveJSONToExcelFile(
           excludeUnused ? mappedPreparedAssets : combined,
@@ -768,6 +779,7 @@ const expandReferences = async (
         name: z.string(),
         language: z.string(),
         type: z.string(),
+        fields: z.any()
       })
       .passthrough()
   );
@@ -821,7 +833,12 @@ const expandReferences = async (
           id: foundAsset?.id,
           name: foundAsset?.name,
           language: foundAsset?.language,
-          type: foundAsset?.type
+          type: foundAsset?.type,
+          fields: (foundAsset?.fields?.meta_title || foundAsset?.fields?.descriptions || foundAsset?.fields?.page_title) ? {
+            metaTitle: foundAsset?.fields?.meta_title,
+            descriptions: foundAsset?.fields?.descriptions,
+            pageTitle: foundAsset?.fields?.page_title
+          } : undefined
         };
       }
     );
