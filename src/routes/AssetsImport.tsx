@@ -205,6 +205,7 @@ const AssetsImport = () => {
               onClick={() => {
                 setExcelFileName(null);
                 setExcelData([]);
+                setPreviewPage(0);
               }}
               size="sm"
               variant="outline"
