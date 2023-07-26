@@ -1,5 +1,7 @@
 import { CloseIcon, QuestionIcon } from "@chakra-ui/icons";
 import {
+  Alert,
+  AlertIcon,
   Box,
   Button,
   Checkbox,
@@ -52,6 +54,7 @@ const AssetsImport = () => {
   const [excelFileName, setExcelFileName] = useState<null | string>(null);
   const [excelData, setExcelData] = useState<ExcelItem[]>();
   const [assetsUpdateLoading, setAssetsUpdateLoading] = useState(false);
+  const [previewPage, setPreviewPage] = useState(0);
   const toast = useToast();
 
   const updateAssets = async () => {
@@ -67,9 +70,10 @@ const AssetsImport = () => {
           key.includes(EXCEL_FIELDS_PREFIX)
         );
 
-        const fieldsToOmit: ((keyof ReturnType<
-          typeof mapPagesDataForExcel
-        >[0] | string))[] = [
+        const fieldsToOmit: (
+          | keyof ReturnType<typeof mapPagesDataForExcel>[0]
+          | string
+        )[] = [
           "id",
           "name",
           "language",
@@ -84,7 +88,7 @@ const AssetsImport = () => {
           "referenced_by_type",
           "referenced_by_meta_title",
           "referenced_by_page_title",
-          "referenced_by_descriptions"
+          "referenced_by_descriptions",
         ];
 
         // Creating a sanitized copy of the object without some fields.
@@ -222,17 +226,74 @@ const AssetsImport = () => {
       {assetsUpdateLoading && excelData && (
         <Progress size="xs" value={percentageProgress * 100} />
       )}
-      {excelData && excelData.length > 0 && <p>This table doesn't show all columns - it's just for preview purposes.</p>}
+
+      {excelData && excelData.length > 0 && (
+        <Flex width="100%" justifyContent="space-between" alignItems="center">
+          <Alert
+            status="info"
+            variant="subtle"
+            background="none"
+          >
+            <AlertIcon />
+            This table doesn't show all columns - it's just for preview
+            purposes.
+          </Alert>
+
+          <Flex
+            flexDirection="row"
+            width="100%"
+            alignItems="center"
+            justifyContent="flex-end"
+            gap={1}
+          >
+            <Button size="sm" disabled={true} cursor="auto">
+              Page {previewPage + 1}/{Math.floor(excelData.length / 100) + 1}
+            </Button>
+
+            <Button
+              isDisabled={previewPage === 0}
+              onClick={() => {
+                if (previewPage === 0) return;
+                setPreviewPage(previewPage - 1);
+              }}
+              size="sm"
+            >
+              {"<"}
+            </Button>
+            <Button
+              onClick={() => {
+                if (previewPage === Math.floor(excelData.length / 100)) return;
+                setPreviewPage(previewPage + 1);
+              }}
+              size="sm"
+              isDisabled={previewPage === Math.floor(excelData.length / 100)}
+            >
+              {">"}
+            </Button>
+          </Flex>
+        </Flex>
+      )}
+
       {excelData && excelData.length > 0 && (
         <TableContainer>
           <Table variant="simple">
             <Thead>
               <Tr>
-                <Th><Tooltip label={'This column shows update progress. Green means that asset was updated correctly. Red indicates an error.'}><div>State <QuestionIcon /></div></Tooltip></Th>
+                <Th>
+                  <Tooltip
+                    label={
+                      "This column shows update progress. Green means that asset was updated correctly. Red indicates an error."
+                    }
+                  >
+                    <div>
+                      State <QuestionIcon />
+                    </div>
+                  </Tooltip>
+                </Th>
                 <Th>ID</Th>
                 <Th>Language</Th>
                 <Th>Asset name</Th>
-               
+
                 {excelData?.find((item) => item.fields_image_alt) && (
                   <Th>Alt</Th>
                 )}
@@ -242,81 +303,90 @@ const AssetsImport = () => {
                 {excelData?.find((item) => item.fields_page_title) && (
                   <Th>Page Title</Th>
                 )}
-                 {excelData?.find((item) => item.fields_flag_regionalize) && (
+                {excelData?.find((item) => item.fields_flag_regionalize) && (
                   <Th>Regionalize</Th>
                 )}
               </Tr>
             </Thead>
             <Tbody>
-              {excelData.map((asset, i) => (
-                <Tr key={i}>
-                  <Td>
-                    <Tooltip label={asset.state || "Not updated"}>
-                      <Box>
-                        {asset.state === AssetState.UPDATED && (
-                          <Text color="orange">◍</Text>
-                        )}
-                        {(!asset.state ||
-                          asset.state === AssetState.NOT_UPDATED) && (
-                          <Text color="red">○</Text>
-                        )}
-                        {asset.state === AssetState.PUBLISHED && (
-                          <Text color="green">●</Text>
-                        )}
-                      </Box>
-                    </Tooltip>
-                  </Td>
-                  <Td>
-                    <Tooltip label={asset.id}>
-                      <Box>{asset.id}</Box>
-                    </Tooltip>
-                  </Td>
-                  <Td>
-                    <Tooltip label={asset.language}>
-                      <Box>{asset.language}</Box>
-                    </Tooltip>
-                  </Td>
-                  <Td>
-                    <Tooltip label={asset.name}>
-                      <Box>{asset.name.substring(0, 10)}...</Box>
-                    </Tooltip>
-                  </Td>
-
-                  {asset.fields_image_alt && (
+              {excelData
+                .slice(previewPage * 100, (previewPage + 1) * 100)
+                .map((asset, i) => (
+                  <Tr key={i}>
                     <Td>
-                      <Tooltip label={asset.fields_image_alt}>
-                        <Box>{asset.fields_image_alt.substring(0, 10)}...</Box>
-                      </Tooltip>
-                    </Td>
-                  )}
-                  {asset.fields_descriptions && (
-                    <Td>
-                      <Tooltip label={asset.fields_descriptions}>
+                      <Tooltip label={asset.state || "Not updated"}>
                         <Box>
-                          {asset.fields_descriptions.substring(0, 10)}...
+                          {asset.state === AssetState.UPDATED && (
+                            <Text color="orange">◍</Text>
+                          )}
+                          {(!asset.state ||
+                            asset.state === AssetState.NOT_UPDATED) && (
+                            <Text color="red">○</Text>
+                          )}
+                          {asset.state === AssetState.PUBLISHED && (
+                            <Text color="green">●</Text>
+                          )}
                         </Box>
                       </Tooltip>
                     </Td>
-                  )}
-                  {asset.fields_page_title && (
                     <Td>
-                      <Tooltip label={asset.fields_page_title}>
-                        <Box>{asset.fields_page_title.substring(0, 10)}...</Box>
+                      <Tooltip label={asset.id}>
+                        <Box>{asset.id}</Box>
                       </Tooltip>
                     </Td>
-                  )}
-                  {!asset.fields_page_title && asset.fields_flag_regionalize && (
                     <Td>
-                      -
+                      <Tooltip label={asset.language}>
+                        <Box>{asset.language}</Box>
+                      </Tooltip>
                     </Td>
-                  )}
-                  {asset.fields_flag_regionalize && (
                     <Td>
-                        <Checkbox isChecked={asset.fields_flag_regionalize} style={{cursor: 'auto'}}/>
+                      <Tooltip label={asset.name}>
+                        <Box>{asset.name.substring(0, 10)}...</Box>
+                      </Tooltip>
                     </Td>
-                  )}
-                </Tr>
-              ))}
+
+                    {asset.fields_image_alt && (
+                      <Td>
+                        <Tooltip label={asset.fields_image_alt}>
+                          <Box>
+                            {asset.fields_image_alt.substring
+                              ? asset.fields_image_alt.substring(0, 10)
+                              : "-"}
+                            ...
+                          </Box>
+                        </Tooltip>
+                      </Td>
+                    )}
+                    {asset.fields_descriptions && (
+                      <Td>
+                        <Tooltip label={asset.fields_descriptions}>
+                          <Box>
+                            {asset.fields_descriptions.substring(0, 10)}...
+                          </Box>
+                        </Tooltip>
+                      </Td>
+                    )}
+                    {asset.fields_page_title && (
+                      <Td>
+                        <Tooltip label={asset.fields_page_title}>
+                          <Box>
+                            {asset.fields_page_title.substring(0, 10)}...
+                          </Box>
+                        </Tooltip>
+                      </Td>
+                    )}
+                    {!asset.fields_page_title &&
+                      asset.fields_flag_regionalize && <Td>-</Td>}
+                    {asset.fields_flag_regionalize && (
+                      <Td>
+                        <Checkbox
+                          isChecked={asset.fields_flag_regionalize}
+                          style={{ cursor: "auto" }}
+                        />
+                      </Td>
+                    )}
+                  </Tr>
+                ))}
             </Tbody>
           </Table>
         </TableContainer>
