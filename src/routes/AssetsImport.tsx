@@ -47,6 +47,8 @@ interface ExcelItem {
   fields_page_title?: string;
   fields_descriptions?: string;
   fields_slug?: string;
+  fields_productCategory?: string | null;
+  fields_technology?: string | null;
   state?: AssetState;
 }
 
@@ -108,6 +110,15 @@ const AssetsImport = () => {
           ...assetWithoutExcelCustomFields,
           fields,
         };
+
+        // MAP
+        if (payload.fields_productCategory === "") {
+          payload.fields_productCategory = null;
+        }
+
+        if (payload.fields_technology === "") {
+          payload.fields_productCategory = null;
+        }
 
         console.log("PAYLOAD", { itemID: asset.id, payload });
         return { itemID: asset.id, payload };
@@ -230,11 +241,7 @@ const AssetsImport = () => {
 
       {excelData && excelData.length > 0 && (
         <Flex width="100%" justifyContent="space-between" alignItems="center">
-          <Alert
-            status="info"
-            variant="subtle"
-            background="none"
-          >
+          <Alert status="info" variant="subtle" background="none">
             <AlertIcon />
             This table doesn't show all columns - it's just for preview
             purposes.
@@ -307,6 +314,12 @@ const AssetsImport = () => {
                 {excelData?.find((item) => item.fields_flag_regionalize) && (
                   <Th>Regionalize</Th>
                 )}
+                {excelData?.find((item) => item.fields_productCategory) && (
+                  <Th>Product Category</Th>
+                )}
+                {excelData?.find((item) => item.fields_technology) && (
+                  <Th>Technology</Th>
+                )}
               </Tr>
             </Thead>
             <Tbody>
@@ -367,12 +380,18 @@ const AssetsImport = () => {
                         </Tooltip>
                       </Td>
                     )}
-                    {asset.fields_page_title && (
+                    {asset.fields_page_title ? (
                       <Td>
                         <Tooltip label={asset.fields_page_title}>
                           <Box>
                             {asset.fields_page_title.substring(0, 10)}...
                           </Box>
+                        </Tooltip>
+                      </Td>
+                    ) : (
+                      <Td>
+                        <Tooltip label={"No data"}>
+                          <Box>-</Box>
                         </Tooltip>
                       </Td>
                     )}
@@ -385,6 +404,14 @@ const AssetsImport = () => {
                           style={{ cursor: "auto" }}
                         />
                       </Td>
+                    )}
+
+                    {asset.fields_productCategory && (
+                      <Td>{asset.fields_productCategory}</Td>
+                    )}
+
+                    {asset.fields_technology && (
+                      <Td>{asset.fields_technology}</Td>
                     )}
                   </Tr>
                 ))}

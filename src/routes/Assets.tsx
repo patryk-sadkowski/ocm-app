@@ -2,18 +2,15 @@ import {
   Box,
   Input,
   Skeleton,
-  Table,
-  Text,
-  TableContainer,
+  Table, TableContainer,
   Tbody,
-  Td,
-  Tfoot,
+  Td, Text, Tfoot,
   Th,
   Thead,
-  Tr,
+  Tr
 } from "@chakra-ui/react";
 import { useCallback, useEffect, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import withAuth from "../hoc/withAuth";
 import { getAllRepos } from "../services/repositories.service";
 import { RepositoryI } from "../types/repositories";

@@ -66,6 +66,8 @@ export const mapPagesDataForExcel = (
       language: asset?.language,
       repository: repositoryName,
       fields_flag_regionalize: asset?.fields?.flag_regionalize,
+      fields_productCategory: asset?.fields?.productCategory,
+      fields_technology: asset?.fields?.technology,
       edited: false,
     };
   });
