@@ -9,6 +9,7 @@ import {
 import { Link } from "react-router-dom";
 import { motion } from "framer-motion";
 import withAuth from "../hoc/withAuth";
+import { NEXT_ACTION_PARAM_NAME, NextAction } from "./Repositories";
 
 const Home = () => {
   return (
@@ -18,7 +19,7 @@ const Home = () => {
       templateColumns="repeat(auto-fill, minmax(200px, 1fr))"
     >
       <CardWithDescription
-        cardLink="/assets"
+        cardLink="/repositories"
         cardTitle="Assets export"
         cardDescription="Export assets from specific repository"
       />
@@ -26,6 +27,12 @@ const Home = () => {
         cardLink="/assets-import"
         cardTitle="Assets import"
         cardDescription="Change existing assets using Excel file"
+      />
+      <CardWithDescription
+        cardLink="/repositories"
+        cardTitle="Distributor pages"
+        cardDescription="Generate distributor pages using Excel"
+        nextAction={NextAction.GENERATE_DISTRIBUTOR_PAGES}
       />
     </SimpleGrid>
   );
@@ -35,17 +42,29 @@ type CardWithDescriptionProps = {
   cardTitle: string;
   cardDescription: string;
   cardLink: string;
+  nextAction?: NextAction;
 };
 
-const CardWithDescription = (props: CardWithDescriptionProps) => {
-  const { cardTitle, cardDescription, cardLink } = props;
+const CardWithDescription = ({
+  cardTitle,
+  cardDescription,
+  cardLink,
+  nextAction,
+}: CardWithDescriptionProps) => {
   return (
     <motion.div
       whileHover={{
         scale: 1.05,
       }}
     >
-      <Link to={cardLink}>
+      <Link
+        to={{
+          pathname: cardLink,
+          search: nextAction
+            ? `?${NEXT_ACTION_PARAM_NAME}=${nextAction}`
+            : undefined,
+        }}
+      >
         <Card>
           <CardHeader>
             <Heading size="md">{cardTitle}</Heading>

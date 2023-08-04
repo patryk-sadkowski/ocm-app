@@ -4,12 +4,13 @@ import { HashRouter, Route, Routes } from "react-router-dom";
 import { ChakraProvider } from "@chakra-ui/react";
 import Header from "./components/Header";
 import { AuthProvider } from "./context/AuthContext";
-import Repositories from "./routes/Assets";
+import Repositories from "./routes/Repositories";
 import Cors from "./routes/Cors";
 import Home from "./routes/Home";
 import Login from "./routes/Login";
-import Repository from "./routes/Repository";
+import RepositoryExport from "./routes/RepositoryExport";
 import AssetsImport from "./routes/AssetsImport";
+import GenerateDistributorPages from "./routes/GenerateDistributorPages";
 
 const withChakra = (Component: React.FC) => {
   return () => (
@@ -27,11 +28,12 @@ const App = () => {
 
         <Routes>
           <Route path="/" element={<Home />}></Route>
-          <Route path="/assets" element={<Repositories />}></Route>
+          <Route path="/repositories" element={<Repositories />}></Route>
           <Route path="/login" element={<Login />}></Route>
           <Route path="/cors" element={<Cors />}></Route>
-          <Route path="/repository" element={<Repository />}></Route>
+          <Route path="/repository-export" element={<RepositoryExport />}></Route>
           <Route path="/assets-import" element={<AssetsImport />}></Route>
+          <Route path="/generate-distributor-pages" element={<GenerateDistributorPages />}></Route>
         </Routes>
       </AuthProvider>
     </HashRouter>

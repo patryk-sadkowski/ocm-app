@@ -61,7 +61,7 @@ interface LoadingStates {
 
 const server = localStorage.getItem("server")?.toLowerCase();
 
-const Repository = () => {
+const RepositoryExport = () => {
   const [assetsWithTooLongFieldValue, setAssetsWithTooLongFieldValue] =
     useState<
       {
@@ -853,4 +853,4 @@ const expandReferences = async (
   return mappedData;
 };
 
-export default Repository;
+export default RepositoryExport;

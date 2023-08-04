@@ -1,5 +1,4 @@
 import { ItemI } from "../types/repositories";
-import { fetchItemByID } from "./assets.service";
 import { StructurePageI } from "./sites.service";
 
 export const mapImagesDataForExcel = (

@@ -1,21 +1,61 @@
 import {
   Box,
+  Card,
+  CardBody,
+  CardHeader,
+  Heading,
   Input,
   Skeleton,
-  Table, TableContainer,
+  Table,
+  TableContainer,
   Tbody,
-  Td, Text, Tfoot,
+  Td,
+  Text,
+  Tfoot,
   Th,
   Thead,
-  Tr
+  Tr,
 } from "@chakra-ui/react";
-import { useCallback, useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import withAuth from "../hoc/withAuth";
 import { getAllRepos } from "../services/repositories.service";
 import { RepositoryI } from "../types/repositories";
 
-const Assets = () => {
+export const NEXT_ACTION_PARAM_NAME = "nextAction";
+
+export enum NextAction {
+  ASSETS_IMPORT = "/assets-import",
+  REPOSITORY_EXPORT = "/repository-export",
+  GENERATE_DISTRIBUTOR_PAGES = "/generate-distributor-pages",
+}
+
+/**
+ * Returns
+ */
+const nextActionRoute = (searchParams: URLSearchParams) => {
+  const nextAction = searchParams.get(NEXT_ACTION_PARAM_NAME);
+  console.log("DUB DUB", nextAction);
+  if (nextAction === NextAction.GENERATE_DISTRIBUTOR_PAGES) {
+    return NextAction.GENERATE_DISTRIBUTOR_PAGES;
+  }
+
+  if (nextAction === NextAction.ASSETS_IMPORT) {
+    return NextAction.ASSETS_IMPORT;
+  }
+
+  return NextAction.REPOSITORY_EXPORT;
+};
+
+const Repositories = () => {
+  const [searchParams] = useSearchParams();
+  const nextAction = useMemo(
+    () => nextActionRoute(searchParams),
+    [searchParams]
+  );
+
+  console.log("NEXT ACTION", nextAction);
+
   const [repositoryNameQuery, setRepositoryNameQuery] = useState("");
   const [repositoryIdQuery, setRepositoryIdQuery] = useState("");
   const [loadingRepositories, setLoadingRepositories] = useState(false);
@@ -37,7 +77,17 @@ const Assets = () => {
 
   return (
     <Box>
-      <Text padding={4} color="gray">Choose repository to export assets from</Text>
+      <Box padding={4}>
+        <Card>
+          <CardBody>
+            <Heading size="sm" marginBottom={4}>
+              {nextAction === NextAction.GENERATE_DISTRIBUTOR_PAGES && <span>Generate distributor pages</span>}
+              {nextAction === NextAction.REPOSITORY_EXPORT && <span>Export repository</span>}
+            </Heading>
+            <Text> Choose the repository you want to work with</Text>
+          </CardBody>
+        </Card>
+      </Box>
       <TableContainer opacity={loadingRepositories ? 0.5 : 1}>
         <Table variant="simple">
           <Thead>
@@ -84,8 +134,12 @@ const Assets = () => {
             {repositories
               .filter(
                 (repo) =>
-                  repo.name.toLowerCase().includes(repositoryNameQuery.toLowerCase()) &&
-                  repo.id.toLowerCase().includes(repositoryIdQuery.toLowerCase())
+                  repo.name
+                    .toLowerCase()
+                    .includes(repositoryNameQuery.toLowerCase()) &&
+                  repo.id
+                    .toLowerCase()
+                    .includes(repositoryIdQuery.toLowerCase())
               )
               .map((repo, i) => {
                 return (
@@ -97,7 +151,7 @@ const Assets = () => {
                     }}
                     onClick={() => {
                       navigate({
-                        pathname: "/repository",
+                        pathname: nextAction,
                         search: `?id=${repo.id}&name=${repo.name}`,
                       });
                     }}
@@ -122,4 +176,4 @@ const Assets = () => {
   );
 };
 
-export default withAuth(Assets);
+export default withAuth(Repositories);

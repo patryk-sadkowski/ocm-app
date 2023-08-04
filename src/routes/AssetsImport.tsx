@@ -239,6 +239,13 @@ const AssetsImport = () => {
         <Progress size="xs" value={percentageProgress * 100} />
       )}
 
+      {excelFileName && excelData && !excelData.length && (
+        <Alert status="warning" variant="subtle" background="none">
+          <AlertIcon />
+          No assets found in the file. Have you set the "edited" column to true?
+        </Alert>
+      )}
+
       {excelData && excelData.length > 0 && (
         <Flex width="100%" justifyContent="space-between" alignItems="center">
           <Alert status="info" variant="subtle" background="none">
