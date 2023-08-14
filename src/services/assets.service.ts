@@ -47,7 +47,12 @@ export const fetchAllItemsOfTypeFromRepositoryIdScroll = async (
 
       scrollId = parsedData.scrollId;
 
-      updateProgress && updateProgress(`${items.filter((i) => i.type === type).length} / ${parsedData.limit} (${type})`);
+      updateProgress &&
+        updateProgress(
+          `${items.filter((i) => i.type === type).length} / ${
+            parsedData.limit
+          } (${type})`
+        );
     }
   }
 
@@ -202,9 +207,10 @@ export const getItemVariations = async (id: string): Promise<Array<any>> => {
   return data.data[0].items;
 };
 
-
-
-export const getReferencedByForAsset = async (assetId: string, funcToExecuteAfter?: () => void) => {
+export const getReferencedByForAsset = async (
+  assetId: string,
+  funcToExecuteAfter?: () => void
+) => {
   // https://ircxprd01-iroraclecloud.cec.ocp.oraclecloud.com/content/management/api/v1.1/items/COREC007579556A1448AA96ACDC05E45059A?expand=relationships&includeAdditionalData=false&links=none
   const { data } = await axiosClient(
     `/items/${assetId}?expand=relationships&includeAdditionalData=false&links=none`
@@ -222,4 +228,62 @@ export const getReferencedByForAsset = async (assetId: string, funcToExecuteAfte
   // });
 
   return data;
-}
+};
+
+type GenericItemPayload = {
+  name: string;
+  type: string;
+  description?: string;
+  slug?: string;
+  repositoryId: string;
+  language: string;
+  translatable?: boolean;
+  [key: string]: any;
+};
+
+export const createItem = async <T extends GenericItemPayload>(item: T) => {
+  const { data } = await axiosClient.post(`/items`, JSON.stringify(item), {
+    headers: {
+      "Content-Type": "application/json",
+      "X-Requested-With": "XMLHttpRequest",
+    },
+  });
+
+  return data;
+};
+
+/** Not tested, could not work */
+export const deleteItem = async (itemID: string) => {
+  const data = await axiosClient.delete(`/items/${itemID}`);
+  return data.status === 204;
+};
+
+export const deleteItems = async (itemIds: string[]) => {
+  //   {
+  //     "q": "id eq \"CORE93913F50FF28434FB451EA6EFA7A1BE1\" OR id eq \"CORECF7D2A6D5F534DDE955C25B458904AB5\" OR id eq \"CORED9DD6D184F8E45AE8A65B5312341F28C\" OR id eq \"CORE8C7CF211417C4B0C86AF3D316685BBF4\" OR id eq \"CORE492D654DD81E4D84964D53B95D2F6E74\"",
+  //     "operations": {
+  //         "deleteItems": {
+  //             "value": true
+  //         }
+  //     }
+  // }
+
+  const data = await axiosClient.post(
+    `/bulkItemsOperations`,
+    JSON.stringify({
+      operations: {
+        deleteItems: {
+          value: true,
+        },
+      },
+      q: `id eq "${itemIds.join('" OR id eq "')}"`,
+    }),
+    {
+      headers: {
+        "Content-Type": "application/json",
+      },
+    }
+  );
+
+  return data.status === 200;
+};

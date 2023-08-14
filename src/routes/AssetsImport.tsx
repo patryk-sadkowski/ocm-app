@@ -17,6 +17,9 @@ import {
   Tooltip,
   Tr,
   useToast,
+  Card,
+  CardBody,
+  Heading
 } from "@chakra-ui/react";
 import _ from "lodash";
 import { useCallback, useState } from "react";
@@ -29,6 +32,7 @@ import {
 } from "../services/bulk.service";
 import { mapPagesDataForExcel } from "../services/excel.service";
 import { readExcelFile } from "../services/files.service";
+import { NextAction } from "./Repositories";
 
 enum AssetState {
   NOT_UPDATED = "NOT_UPDATED",
@@ -185,6 +189,15 @@ const AssetsImport = () => {
 
   return (
     <Box padding={4}>
+        <Card marginBottom={4}>
+          <CardBody>
+            <Heading size="sm" marginBottom={4}>
+              Import assets from Excel
+            </Heading>
+            <Text>Click on the box below or drag and drop the Excel file.</Text>
+          </CardBody>
+        </Card>
+
       {!excelFileName && (
         <Flex
           {...getRootProps()}

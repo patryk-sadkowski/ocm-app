@@ -1,3 +1,12 @@
+import { createItem, deleteItem } from "./assets.service";
+import _ from "lodash";
+
+export const EMPTY_DISTRIBUTOR_NAME_STRING = "EMPTY-DISTRIBUTOR-NAME" as const;
+const IR_ADDRESS_TYPE = "IR-Address-v1" as const;
+const IR_STICKY_CTA_TYPE = "IR-StickyCTA-v1" as const;
+const IR_DICTIONARY_TYPE = "IR-Dictionary-v1" as const;
+const UNKNOWN_TYPE = "UNKNOWN_TYPE" as const;
+
 /** This is the DISPLAY NAME / value pairs */
 type OCMLocationPageFieldsDisplayNames = {
   MetaTitle?: string;
@@ -229,7 +238,7 @@ export const getMappedDistributorPages = (
           Object.entries(locationPageFields).map(([key, value]) => {
             const keyTyped = key as keyof typeof locationPageFields;
 
-            const mappedValue = mapLocationValue(keyTyped, value);
+            const mappedValue = mapLocationPageValue(keyTyped, value);
 
             return [
               locationPageDisplayFieldNames[
@@ -275,14 +284,18 @@ export const getMappedDistributorPages = (
         )
         .map((address, i) => ({
           ...address,
-          assetName: `${assetName}-address-${i}`,
+          fields: address.fields as OCMAddressFieldsApiNames,
+          assetName:
+            (address.fields as OCMAddressFieldsApiNames).address_name ||
+            `${assetName}-address-${i}`,
         }));
 
       return {
         ...page,
+        internalId: Math.random().toString(36).substr(2, 9),
         fields: page.fields as OCMLocationPageFieldsApiNames,
         addresses: addresses,
-        assetName,
+        assetName: assetName || EMPTY_DISTRIBUTOR_NAME_STRING,
       };
     });
 
@@ -291,12 +304,29 @@ export const getMappedDistributorPages = (
   return linkedAssets;
 };
 
-const mapLocationValue = (
+/** Converts key-value pair into something that should work with OCM item create API */
+const mapLocationPageValue = (
   key: keyof typeof locationPageDisplayFieldNames,
   value: any
 ) => {
+  if (key === "CTAs") {
+    return mapIds(value).map((ctaId: string) => ({
+      id: ctaId,
+      type: IR_STICKY_CTA_TYPE,
+    }));
+  }
+
+  if (key === "Dictionary") {
+    return {
+      id: value,
+      type: IR_DICTIONARY_TYPE,
+    };
+  }
+
   if (key === "Related Products/Services") {
-    return mapIds(value);
+    return mapIds(value).map((relatedProductId: string) => ({
+      id: relatedProductId,
+    }));
   }
 
   if (
@@ -320,4 +350,82 @@ const mapIds = (value: string) => {
   return value.includes(",")
     ? value.replace(/ /g, "").split(",")
     : value.replace(/ /g, "").split(";");
+};
+
+export const importDistributorPageToOcm = async ({
+  distributorPage,
+  repositoryId,
+  language,
+}: {
+  distributorPage: ReturnType<typeof getMappedDistributorPages>[0];
+  repositoryId: string;
+  language: string;
+}) => {
+  const addressesOcmIds = (
+    await Promise.all(
+      distributorPage.addresses.map(async (address) => {
+        const addressOcmId = await importAddressToOcm({
+          address,
+          repositoryId,
+          language,
+        });
+
+        return addressOcmId;
+      })
+    )
+  ).map((addressAssetId) => ({ id: addressAssetId, type: IR_ADDRESS_TYPE }));
+
+  try {
+    const distributorPageId = await createItem({
+      name: distributorPage.assetName,
+      type: distributorPage.assetType,
+      description: distributorPage.url,
+      repositoryId,
+      language,
+      fields: {
+        ..._.omit(distributorPage.fields, ["url"]),
+        ir_address: addressesOcmIds,
+      },
+    });
+
+    return { distributorPageId, addressesOcmIds };
+  } catch (err) {
+    console.log('DISTRIBUTOR PAGE IMPORT ERROR', err)
+    return { distributorPageId: null, addressesOcmIds };
+  }
+};
+
+const importAddressToOcm = async ({
+  address,
+  repositoryId,
+  language,
+}: {
+  address: ReturnType<typeof getMappedDistributorPages>[0]["addresses"][0];
+  repositoryId: string;
+  language: string;
+}): Promise<string> => {
+  const res = await createItem({
+    name: address.assetName,
+    type: address.assetType,
+    description: "Address asset created from Excel import",
+    repositoryId,
+    language,
+    fields: address.fields,
+  });
+
+  if (res.id) {
+    return res.id;
+  }
+
+  throw new Error("Could not create address");
+};
+
+const removeCreatedItems = async (assetIds: string[]) => {
+  await Promise.all(
+    assetIds.map(async (assetId) => {
+      await deleteItem(assetId);
+    })
+  );
+
+  return true;
 };
