@@ -3,10 +3,9 @@ import {
   Alert,
   AlertIcon,
   Box,
-  Button,
-  Checkbox,
-  Flex,
-  Progress,
+  Button, Card,
+  CardBody, Checkbox,
+  Flex, Heading, Progress,
   Table,
   TableContainer,
   Tbody,
@@ -16,10 +15,7 @@ import {
   Thead,
   Tooltip,
   Tr,
-  useToast,
-  Card,
-  CardBody,
-  Heading
+  useToast
 } from "@chakra-ui/react";
 import _ from "lodash";
 import { useCallback, useState } from "react";
@@ -28,11 +24,10 @@ import withAuth from "../hoc/withAuth";
 import { updateItem } from "../services/assets.service";
 import {
   publishItemById,
-  setItemAsTransletedById,
+  setItemAsTranslatedById
 } from "../services/bulk.service";
 import { mapPagesDataForExcel } from "../services/excel.service";
 import { readExcelFile } from "../services/files.service";
-import { NextAction } from "./Repositories";
 
 enum AssetState {
   NOT_UPDATED = "NOT_UPDATED",
@@ -140,7 +135,7 @@ const AssetsImport = () => {
         assetsCopy[assetIndex].state = AssetState.UPDATED;
         setExcelData(assetsCopy);
 
-        res.language !== "en" && (await setItemAsTransletedById(asset.itemID));
+        res.language !== "en" && (await setItemAsTranslatedById(asset.itemID));
         await publishItemById(asset.itemID);
 
         assetsCopy[assetIndex].state = AssetState.PUBLISHED;

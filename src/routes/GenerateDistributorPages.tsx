@@ -9,6 +9,7 @@ import {
   Checkbox,
   Flex,
   Heading,
+  Link,
   Spinner,
   Table,
   Tag,
@@ -19,24 +20,36 @@ import {
   Thead,
   Tooltip,
   Tr,
+  useToast,
+  Select,
 } from "@chakra-ui/react";
-import { Fragment, useCallback, useState } from "react";
+import { Fragment, useCallback, useMemo, useState, useEffect } from "react";
 import { useDropzone } from "react-dropzone";
 import { useSearchParams } from "react-router-dom";
+import { publishItemById } from "../services/bulk.service";
 import {
   EMPTY_DISTRIBUTOR_NAME_STRING,
   getMappedDistributorPages,
   importDistributorPageToOcm,
 } from "../services/distributorPages.service";
 import { readExcelFile } from "../services/files.service";
-import { deleteItems } from "../services/assets.service";
+import { getAllChannels } from "../services/channel.service";
 
-type Status = "LOADING" | "PUBLISHED" | "ERROR";
+type Status = "LOADING" | "PUBLISHED" | "ERROR" | "IMPORTED";
+
+const server = localStorage.getItem("server")?.toLowerCase();
 
 const GenerateDistributorPages = () => {
   const [isLoading, setIsLoading] = useState(false);
-  const [isFailedAssetsRemovalLoading, setFailedAssetsRemovalLoading] =
-    useState(false);
+  // const [isFailedAssetsRemovalLoading, setFailedAssetsRemovalLoading] =
+  //   useState(false);
+  const toast = useToast();
+  const [channels, setChannels] = useState<{ id: string; name: string }[]>([]);
+  const [selectedChannel, setSelectedChannel] = useState<{
+    id: string;
+    name: string;
+  } | null>(null);
+
   const [pagesStates, setPagesStates] = useState<{
     [internalId: string]: Status;
   }>({});
@@ -49,11 +62,78 @@ const GenerateDistributorPages = () => {
   >>(null);
   const [failedAssetsIds, setFailedAssetsIds] = useState<string[]>([]);
   const [publishAfterImport, setPublishAfterImport] = useState(false);
+  const [errors, setErrors] = useState<{ assetName: string; error: string }[]>(
+    []
+  );
+
+  const failedAssetsLinks = useMemo(() => {
+    if (!failedAssetsIds.length) {
+      return [];
+    }
+
+    const firstUrlChunk =
+      "https://ircxdev01-iroraclecloud.cec.ocp.oraclecloud.com/documents/assets?q=%7B%22keywords%22%3A%5B%22";
+    const lastUrlChunk = `%22%5D%2C%22repositoryId%22%3A%22${repositoryId}%22%7D`;
+
+    const baseUrl = `https://${server}-iroraclecloud.cec.ocp.oraclecloud.com/documents/assets?q=%7B%22repositoryId%22%3A%22${repositoryId}%22%2C%22keywords%22%3A%5B%22`;
+    const baseUrlLength = (firstUrlChunk + lastUrlChunk).length;
+    const maxUrlLength = 2000;
+
+    const singleIdLength = failedAssetsIds[0].length;
+    const maxIds = Math.floor((maxUrlLength - baseUrlLength) / singleIdLength);
+    const URLs = [];
+
+    for (let i = 0; i < failedAssetsIds.length; i += maxIds) {
+      const idsChunk = failedAssetsIds.slice(i, i + maxIds);
+      const idsChunkString = idsChunk.join("%22%2C%22");
+      const url = `${firstUrlChunk}${idsChunkString}${lastUrlChunk}`;
+      URLs.push(url);
+    }
+
+    return URLs;
+  }, [failedAssetsIds, repositoryId]);
+
+  const getChannels = async () => {
+    try {
+      const channels = await getAllChannels();
+      if (repositoryName) {
+        const channelGuess = channels.items.find(
+          (channel: { name: string; id: string }) =>
+            channel.name.toLowerCase().includes(repositoryName.toLowerCase())
+        );
+
+        channelGuess && setSelectedChannel(channelGuess);
+      }
+
+      setChannels(channels.items);
+    } catch (err: any) {
+      toast({
+        title: "Error",
+        description: `An error occured while fetching channels. ${err.message}`,
+        status: "error",
+        duration: null,
+        isClosable: true,
+      });
+    }
+  };
+
+  useEffect(() => {
+    getChannels();
+  }, []);
+
+  const addError = (err?: { assetName: string; error: string }) => {
+    if (!err) return;
+    setErrors((prevState) => [...prevState, err]);
+  };
 
   const startGenerating = async () => {
-    if (!mappedExcelData || !repositoryId) {
+    if (!mappedExcelData || !repositoryId || !selectedChannel) {
       return null;
     }
+
+    setFailedAssetsIds([]);
+    setErrors([]);
+
     setIsLoading(true);
 
     for (const mappedDistributorPage of mappedExcelData) {
@@ -62,19 +142,56 @@ const GenerateDistributorPages = () => {
         [mappedDistributorPage.internalId]: "LOADING",
       }));
 
-      const { distributorPageId, addressesOcmIds } =
+      const { distributorPageId, addressesOcmIds, error } =
         await importDistributorPageToOcm({
           distributorPage: mappedDistributorPage,
           repositoryId: repositoryId,
           language: "en",
+          channelId: selectedChannel.id,
         });
 
       if (distributorPageId) {
         setPagesStates((prevState) => ({
           ...prevState,
-          [mappedDistributorPage.internalId]: "PUBLISHED",
+          [mappedDistributorPage.internalId]: "IMPORTED",
         }));
+
+        if (publishAfterImport) {
+          try {
+            // publish addresses first
+            for (const address of addressesOcmIds) {
+              await publishItemById(address.id);
+            }
+
+            await publishItemById(distributorPageId);
+            setPagesStates((prevState) => ({
+              ...prevState,
+              [mappedDistributorPage.internalId]: "PUBLISHED",
+            }));
+          } catch (err: any) {
+            addError({
+              assetName: mappedDistributorPage.assetName,
+              error:
+                (err.response?.data as { detail: string }).detail ||
+                err.message,
+            });
+            toast({
+              title: "Error",
+              description: `An error occured while publishing. Distributor page: ${distributorPageId}`,
+              status: "error",
+              duration: null,
+              isClosable: true,
+            });
+          }
+        }
       } else {
+        error &&
+          addError({
+            assetName: mappedDistributorPage.assetName,
+            error:
+              (error.response?.data as { detail: string }).detail ||
+              error.message,
+          });
         setFailedAssetsIds((prevState) => [
           ...prevState,
           ...addressesOcmIds.map((address) => address.id),
@@ -87,20 +204,36 @@ const GenerateDistributorPages = () => {
       }
     }
 
+    toast({
+      title: "Import done",
+      description: "Location pages import has been finished.",
+      status: "info",
+      duration: null,
+      isClosable: true,
+    });
+
     setIsLoading(false);
   };
 
-  const removeFailedAssets = async () => {
-    if (!failedAssetsIds.length) {
-      return null;
-    }
+  /** DOESN'T WORK */
+  // const removeFailedAssets = async () => {
+  //   if (!failedAssetsIds.length) {
+  //     return null;
+  //   }
 
-    setFailedAssetsRemovalLoading(true);
+  //   setFailedAssetsRemovalLoading(true);
 
-    await deleteItems(failedAssetsIds);
+  //   for (const assetId of failedAssetsIds) {
+  //     try {
+  //       await deleteItem(assetId);
+  //       setRemovedFailedAssetsLength((prevState) => prevState + 1);
+  //     } catch (err) {
+  //       console.log('ERROR', err)
+  //     }
+  //   }
 
-    setFailedAssetsRemovalLoading(false);
-  };
+  //   setFailedAssetsRemovalLoading(false);
+  // };
 
   const readExcelFileAndSetState = async (excelFile: File) => {
     const assetsFromExcel = await readExcelFile(excelFile);
@@ -163,6 +296,8 @@ const GenerateDistributorPages = () => {
                   setExcelFileName(null);
                   setMappedExcelData(null);
                   setExcelFileName(null);
+                  setFailedAssetsIds([]);
+                  setErrors([]);
                 }}
                 size="sm"
                 variant="outline"
@@ -181,6 +316,27 @@ const GenerateDistributorPages = () => {
         <Card width="100%">
           <CardBody padding="8px 16px">
             <Flex justifyContent="center" alignItems="center" gap={8}>
+              <Flex alignItems="center" justifyContent="center" gap={2}>
+                Channel:{" "}
+                <Select
+                  maxWidth={150}
+                  value={selectedChannel?.id}
+                  placeholder="Select channel"
+                  onChange={(e) =>
+                    setSelectedChannel({
+                      id: e.target.value,
+                      name: e.target.selectedOptions[0].text,
+                    })
+                  }
+                >
+                  {channels.map((channel) => (
+                    <option key={channel.id} value={channel.id}>
+                      {channel.name}
+                    </option>
+                  ))}
+                </Select>
+              </Flex>
+
               <Checkbox
                 isChecked={publishAfterImport}
                 onChange={(e) => setPublishAfterImport(e.target.checked)}
@@ -198,7 +354,9 @@ const GenerateDistributorPages = () => {
                   ).length
                 } / ${mappedExcelData?.length} pages`}
               >
-                Start generating
+                {Object.keys(pagesStates).length > 0
+                  ? "Start again"
+                  : "Start generating"}
               </Button>
             </Flex>
           </CardBody>
@@ -210,16 +368,25 @@ const GenerateDistributorPages = () => {
           <CardBody padding="8px 16px">
             <Alert status="warning" variant="subtle" background="none">
               <AlertIcon />
-              Unfortunately, some assets could not be generated. You can delete
-              address assets related to these pages.
-              <Button
-                onClick={removeFailedAssets}
-                isLoading={isFailedAssetsRemovalLoading}
-                isDisabled={isFailedAssetsRemovalLoading}
-                colorScheme="orange"
-              >
-                Delete
-              </Button>
+              <Flex flexDirection="column" gap={4} paddingLeft={8}>
+                <Box>
+                  Unfortunately, some assets could not be generated. You can
+                  delete the <i>address</i> assets related to these pages.
+                </Box>
+                <Box>
+                  Here are links to these assets in OCM. You can delete them
+                  (there can be many links because of the URL length limit):
+                  <Flex flexDirection="column" gap={2}>
+                    {failedAssetsLinks.map((link, i) => (
+                      <div key={link}>
+                        <Link href={link} target="_blank" color="blue.500">
+                          {i + 1}. Asset IDs
+                        </Link>
+                      </div>
+                    ))}
+                  </Flex>
+                </Box>
+              </Flex>
             </Alert>
           </CardBody>
         </Card>
@@ -242,6 +409,25 @@ const GenerateDistributorPages = () => {
           </Alert>
         )}
 
+      {errors.length > 0 && (
+        <Table>
+          <Thead>
+            <Tr>
+              <Th>Location page name</Th>
+              <Th>Error</Th>
+            </Tr>
+          </Thead>
+          <Tbody>
+            {errors.map((error) => (
+              <Tr key={`${error.assetName}${error.error}`}>
+                <Td>{error.assetName}</Td>
+                <Td>{error.error}</Td>
+              </Tr>
+            ))}
+          </Tbody>
+        </Table>
+      )}
+
       {mappedExcelData && mappedExcelData.length > 0 && (
         <Table>
           <Thead>
@@ -249,7 +435,7 @@ const GenerateDistributorPages = () => {
               <Th width="15%">
                 <Tooltip
                   label={
-                    "This column shows update progress. Green means that asset was updated correctly. Red indicates an error."
+                    "This column shows the import progress. ✔️ means that asset was published, ❌ indicates an error and ☑️ means that asset was imported but not published yet."
                   }
                 >
                   <div>
@@ -271,12 +457,15 @@ const GenerateDistributorPages = () => {
                       <Spinner size="sm" />
                     )}
                     {pagesStates[distributorPage.internalId] === "ERROR" && (
-                      <Text color="red">○</Text>
+                      <Text>❌</Text>
                     )}
                     {pagesStates[distributorPage.internalId] ===
-                      "PUBLISHED" && <Text color="green">●</Text>}
+                      "PUBLISHED" && <Text>✔️</Text>}
+                    {pagesStates[distributorPage.internalId] === "IMPORTED" && (
+                      <Text>☑️</Text>
+                    )}
                     {typeof pagesStates[distributorPage.internalId] ===
-                      "undefined" && <Text color="gray">○</Text>}
+                      "undefined" && <Text color="gray">⚪</Text>}
                   </Td>
 
                   <Td position="relative" width="30%">

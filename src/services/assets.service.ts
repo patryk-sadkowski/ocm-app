@@ -241,33 +241,37 @@ type GenericItemPayload = {
   [key: string]: any;
 };
 
-export const createItem = async <T extends GenericItemPayload>(item: T) => {
-  const { data } = await axiosClient.post(`/items`, JSON.stringify(item), {
-    headers: {
-      "Content-Type": "application/json",
-      "X-Requested-With": "XMLHttpRequest",
-    },
-  });
+export const createItem = async <T extends GenericItemPayload>(
+  item: T,
+  channelIds?: string[]
+) => {
+  const { data } = await axiosClient.post(
+    `/items`,
+    JSON.stringify({
+      ...item,
+      channels: channelIds ? { data: channelIds.map((id) => ({ id })) } : null,
+    }),
+    {
+      headers: {
+        "Content-Type": "application/json",
+        "X-Requested-With": "XMLHttpRequest",
+      },
+    }
+  );
 
   return data;
 };
 
-/** Not tested, could not work */
-export const deleteItem = async (itemID: string) => {
+/** Doesn't work, throws 400. */
+export const _deleteItem = async (itemID: string) => {
   const data = await axiosClient.delete(`/items/${itemID}`);
   return data.status === 204;
 };
 
-export const deleteItems = async (itemIds: string[]) => {
-  //   {
-  //     "q": "id eq \"CORE93913F50FF28434FB451EA6EFA7A1BE1\" OR id eq \"CORECF7D2A6D5F534DDE955C25B458904AB5\" OR id eq \"CORED9DD6D184F8E45AE8A65B5312341F28C\" OR id eq \"CORE8C7CF211417C4B0C86AF3D316685BBF4\" OR id eq \"CORE492D654DD81E4D84964D53B95D2F6E74\"",
-  //     "operations": {
-  //         "deleteItems": {
-  //             "value": true
-  //         }
-  //     }
-  // }
-
+/**
+ * Doesn't work, not sure why. Throws 400.
+ */
+export const _deleteItems = async (itemIds: string[]) => {
   const data = await axiosClient.post(
     `/bulkItemsOperations`,
     JSON.stringify({

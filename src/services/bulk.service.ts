@@ -1,6 +1,6 @@
 import axiosClient from "./api.service";
 
-export const setItemAsTransletedById = async (id: string) => {
+export const setItemAsTranslatedById = async (id: string) => {
   const { data } = await axiosClient.post(
     "/bulkItemsOperations",
     JSON.stringify({

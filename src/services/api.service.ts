@@ -9,10 +9,14 @@ const getToken = () => {
   return localStorage.getItem("token");
 };
 
+export const getServer = () => {
+  return localStorage.getItem("server");
+};
+
 const token = getToken();
 const authorization = `Bearer ${token}`;
 const baseURL = `https://${
-  getToken() || ""
+  getServer() || ""
 }-iroraclecloud.cec.ocp.oraclecloud.com/`;
 const apiURL = "content/management/api/v1.1";
 

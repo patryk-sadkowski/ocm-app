@@ -1,10 +1,12 @@
-import { createItem, deleteItem } from "./assets.service";
+import { AxiosError } from "axios";
 import _ from "lodash";
+import { createItem } from "./assets.service";
 
 export const EMPTY_DISTRIBUTOR_NAME_STRING = "EMPTY-DISTRIBUTOR-NAME" as const;
 const IR_ADDRESS_TYPE = "IR-Address-v1" as const;
 const IR_STICKY_CTA_TYPE = "IR-StickyCTA-v1" as const;
 const IR_DICTIONARY_TYPE = "IR-Dictionary-v1" as const;
+const IR_IMAGE_TYPE = "IR-Image-v1" as const;
 const UNKNOWN_TYPE = "UNKNOWN_TYPE" as const;
 
 /** This is the DISPLAY NAME / value pairs */
@@ -21,26 +23,26 @@ type OCMLocationPageFieldsDisplayNames = {
   "Label About Us"?: string;
   "About Us"?: string;
   Monday?: string;
-  "Monday (Is 24 Hours)"?: string;
-  "Monday (Is Closed)"?: string;
+  "Monday (Is 24 Hours)"?: string | boolean;
+  "Monday (Is Closed)"?: string | boolean;
   Tuesday?: string;
-  "Tuesday (Is 24 Hours)"?: string;
-  "Tuesday (Is Closed)"?: string;
+  "Tuesday (Is 24 Hours)"?: string | boolean;
+  "Tuesday (Is Closed)"?: string | boolean;
   Wednesday?: string;
-  "Wednesday (Is 24 Hours)"?: string;
-  "Wednesday (Is Closed)"?: string;
+  "Wednesday (Is 24 Hours)"?: string | boolean;
+  "Wednesday (Is Closed)"?: string | boolean;
   Thursday?: string;
-  "Thursday (Is 24 Hours)"?: string;
-  "Thursday (Is Closed)"?: string;
+  "Thursday (Is 24 Hours)"?: string | boolean;
+  "Thursday (Is Closed)"?: string | boolean;
   Friday?: string;
-  "Friday (Is 24 Hours)"?: string;
-  "Friday (Is Closed)"?: string;
+  "Friday (Is 24 Hours)"?: string | boolean;
+  "Friday (Is Closed)"?: string | boolean;
   Saturday?: string;
-  "Saturday (Is 24 Hours)"?: string;
-  "Saturday (Is Closed)"?: string;
+  "Saturday (Is 24 Hours)"?: string | boolean;
+  "Saturday (Is Closed)"?: string | boolean;
   Sunday?: string;
-  "Sunday (Is 24 Hours)"?: string;
-  "Sunday (Is Closed)"?: string;
+  "Sunday (Is 24 Hours)"?: string | boolean;
+  "Sunday (Is Closed)"?: string | boolean;
   "Label Areas Covered"?: string;
   "Areas Covered"?: string;
   "Label Related Products/Services"?: string;
@@ -91,8 +93,8 @@ const locationPageDisplayFieldNames: OCMLocationPageFieldsDisplayNames = {
   Tuesday: "tuesday",
   "Tuesday (Is 24 Hours)": "is_24_hours_tuesday",
   "Tuesday (Is Closed)": "is_closed_tuesday",
-  Wednesday: "wednesday",
-  "Wednesday (Is 24 Hours)": "is_24_hours_wednesday",
+  Wednesday: "Wednesday",
+  "Wednesday (Is 24 Hours)": "is_24_hours_wednesday_",
   "Wednesday (Is Closed)": "is_closed_wednesday",
   Thursday: "thursday",
   "Thursday (Is 24 Hours)": "is_24_hours_thursday",
@@ -174,25 +176,25 @@ type OCMLocationPageFieldsApiNames = {
   label_about_us: string;
   monday: string[];
   is_24_hours: boolean;
-  is_closed: string;
+  is_closed: boolean;
   tuesday: string[];
   is_24_hours_tuesday: boolean;
-  is_closed_tuesday: string;
+  is_closed_tuesday: boolean;
   wednesday: string[];
   is_24_hours_wednesday: boolean;
-  is_closed_wednesday: string;
+  is_closed_wednesday: boolean;
   thursday: string[];
   is_24_hours_thursday: boolean;
-  is_closed_thursday: string;
+  is_closed_thursday: boolean;
   friday: string[];
   "Is 24 Hours": boolean;
-  is_closed_friday: string;
+  is_closed_friday: boolean;
   saturday: string[];
   is_24_hours_saturday: boolean;
-  is_closed_saturday: string;
+  is_closed_saturday: boolean;
   sunday: string[];
   is_24_hours_sunday: boolean;
-  is_closed_sunday: string;
+  is_closed_sunday: boolean;
   label_areas_covered: string;
   areas_covered: string;
   "label_related_products-services": string;
@@ -215,6 +217,23 @@ export const getMappedDistributorPages = (
 
       const addressFields: OCMAddressFieldsDisplayNames = {};
       const locationPageFields: OCMLocationPageFieldsDisplayNames = {};
+      const keysThatBlankShouldHaveDefaultValue: (keyof OCMLocationPageFieldsDisplayNames)[] =
+        [
+          "Monday (Is Closed)",
+          "Monday (Is 24 Hours)",
+          "Tuesday (Is Closed)",
+          "Tuesday (Is 24 Hours)",
+          "Wednesday (Is Closed)",
+          "Wednesday (Is 24 Hours)",
+          "Thursday (Is Closed)",
+          "Thursday (Is 24 Hours)",
+          "Friday (Is Closed)",
+          "Friday (Is 24 Hours)",
+          "Saturday (Is Closed)",
+          "Saturday (Is 24 Hours)",
+          "Sunday (Is Closed)",
+          "Sunday (Is 24 Hours)",
+        ];
 
       keys.forEach((key) => {
         if (ocmFieldNames[key] && key.toLowerCase().includes("ir-address")) {
@@ -230,6 +249,13 @@ export const getMappedDistributorPages = (
             key
           ] as keyof typeof locationPageFields;
           locationPageFields[ocmFieldName] = row[key];
+        }
+      });
+
+      // Add default values
+      keysThatBlankShouldHaveDefaultValue.forEach((key) => {
+        if (!locationPageFields[key]) {
+          locationPageFields[key] = false as any;
         }
       });
 
@@ -292,7 +318,7 @@ export const getMappedDistributorPages = (
 
       return {
         ...page,
-        internalId: Math.random().toString(36).substr(2, 9),
+        internalId: Math.random().toString(36).substring(2, 9),
         fields: page.fields as OCMLocationPageFieldsApiNames,
         addresses: addresses,
         assetName: assetName || EMPTY_DISTRIBUTOR_NAME_STRING,
@@ -309,6 +335,36 @@ const mapLocationPageValue = (
   key: keyof typeof locationPageDisplayFieldNames,
   value: any
 ) => {
+  if (key === value) {
+    return value;
+  }
+
+  if (
+    key === "Monday (Is 24 Hours)" ||
+    key === "Monday (Is Closed)" ||
+    key === "Tuesday (Is 24 Hours)" ||
+    key === "Tuesday (Is Closed)" ||
+    key === "Wednesday (Is 24 Hours)" ||
+    key === "Wednesday (Is Closed)" ||
+    key === "Thursday (Is 24 Hours)" ||
+    key === "Thursday (Is Closed)" ||
+    key === "Friday (Is 24 Hours)" ||
+    key === "Friday (Is Closed)" ||
+    key === "Saturday (Is 24 Hours)" ||
+    key === "Saturday (Is Closed)" ||
+    key === "Sunday (Is 24 Hours)" ||
+    key === "Sunday (Is Closed)"
+  ) {
+    return !!value;
+  }
+
+  if (key === "Background Image") {
+    return mapIds(value).map((backgroundImageId: string) => ({
+      id: backgroundImageId,
+      type: IR_IMAGE_TYPE,
+    }));
+  }
+
   if (key === "CTAs") {
     return mapIds(value).map((ctaId: string) => ({
       id: ctaId,
@@ -356,10 +412,12 @@ export const importDistributorPageToOcm = async ({
   distributorPage,
   repositoryId,
   language,
+  channelId
 }: {
   distributorPage: ReturnType<typeof getMappedDistributorPages>[0];
   repositoryId: string;
   language: string;
+  channelId: string
 }) => {
   const addressesOcmIds = (
     await Promise.all(
@@ -368,6 +426,7 @@ export const importDistributorPageToOcm = async ({
           address,
           repositoryId,
           language,
+          channelId
         });
 
         return addressOcmId;
@@ -376,7 +435,7 @@ export const importDistributorPageToOcm = async ({
   ).map((addressAssetId) => ({ id: addressAssetId, type: IR_ADDRESS_TYPE }));
 
   try {
-    const distributorPageId = await createItem({
+    const distributorPageImportRes = await createItem({
       name: distributorPage.assetName,
       type: distributorPage.assetType,
       description: distributorPage.url,
@@ -384,14 +443,22 @@ export const importDistributorPageToOcm = async ({
       language,
       fields: {
         ..._.omit(distributorPage.fields, ["url"]),
-        ir_address: addressesOcmIds,
+        /** Workaround - looks like there can be only one address */
+        address: addressesOcmIds[0],
       },
-    });
+    }, [channelId]);
 
-    return { distributorPageId, addressesOcmIds };
+    return {
+      distributorPageId: (distributorPageImportRes as { id: string }).id,
+      addressesOcmIds,
+    };
   } catch (err) {
-    console.log('DISTRIBUTOR PAGE IMPORT ERROR', err)
-    return { distributorPageId: null, addressesOcmIds };
+    console.log("DISTRIBUTOR PAGE IMPORT ERROR", err);
+    return {
+      distributorPageId: null,
+      addressesOcmIds,
+      error: err as AxiosError,
+    };
   }
 };
 
@@ -399,10 +466,12 @@ const importAddressToOcm = async ({
   address,
   repositoryId,
   language,
+  channelId
 }: {
   address: ReturnType<typeof getMappedDistributorPages>[0]["addresses"][0];
   repositoryId: string;
   language: string;
+  channelId: string;
 }): Promise<string> => {
   const res = await createItem({
     name: address.assetName,
@@ -411,21 +480,11 @@ const importAddressToOcm = async ({
     repositoryId,
     language,
     fields: address.fields,
-  });
+  }, [channelId]);
 
   if (res.id) {
     return res.id;
   }
 
   throw new Error("Could not create address");
-};
-
-const removeCreatedItems = async (assetIds: string[]) => {
-  await Promise.all(
-    assetIds.map(async (assetId) => {
-      await deleteItem(assetId);
-    })
-  );
-
-  return true;
 };
