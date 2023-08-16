@@ -235,6 +235,9 @@ export const getMappedDistributorPages = (
           "Sunday (Is 24 Hours)",
         ];
 
+      const keysThatBlankShouldHaveDefaultValueAddress: (keyof OCMAddressFieldsDisplayNames)[] =
+        ["mainPhone"];
+
       keys.forEach((key) => {
         if (ocmFieldNames[key] && key.toLowerCase().includes("ir-address")) {
           const ocmFieldName = ocmFieldNames[key] as keyof typeof addressFields;
@@ -252,12 +255,19 @@ export const getMappedDistributorPages = (
         }
       });
 
-      // Add default values
+      // Add default values - LOCATION PAGE
       keysThatBlankShouldHaveDefaultValue.forEach((key) => {
         if (!locationPageFields[key]) {
           locationPageFields[key] = false as any;
         }
       });
+
+      // Add default values - ADDRESS
+      // keysThatBlankShouldHaveDefaultValueAddress.forEach((key) => {
+      //   if (!addressFields[key]) {
+      //     addressFields[key] = " ";
+      //   }
+      // });
 
       const mappedPageLocationFields: OCMLocationPageFieldsApiNames =
         Object.fromEntries(
@@ -297,6 +307,9 @@ export const getMappedDistributorPages = (
     })
     .filter(({ assetType }) => !assetType.toLowerCase().includes("asset-type"));
 
+  const keysThatBlankShouldHaveDefaultValueAddress: (keyof OCMAddressFieldsApiNames)[] =
+    ["main_phone"];
+
   const linkedAssets = mappedData
     .filter((asset) => asset.assetType.toLowerCase().includes("page"))
     .map((page) => {
@@ -308,13 +321,23 @@ export const getMappedDistributorPages = (
             (a.assetType as string).toLowerCase().includes("ir-address") &&
             a.url === url
         )
-        .map((address, i) => ({
-          ...address,
-          fields: address.fields as OCMAddressFieldsApiNames,
-          assetName:
-            (address.fields as OCMAddressFieldsApiNames).address_name ||
-            `${assetName}-address-${i}`,
-        }));
+        .map((address, i) => {
+          // Add default values - ADDRESS
+          keysThatBlankShouldHaveDefaultValueAddress.forEach((key) => {
+            if (!(address.fields as OCMAddressFieldsApiNames)[key]) {
+              // @ts-expect-error
+              (address.fields as OCMAddressFieldsApiNames)[key] = " ";
+            }
+          });
+
+          return {
+            ...address,
+            fields: address.fields as OCMAddressFieldsApiNames,
+            assetName:
+              (address.fields as OCMAddressFieldsApiNames).address_name ||
+              `${assetName}-address-${i}`,
+          };
+        });
 
       return {
         ...page,
@@ -412,12 +435,12 @@ export const importDistributorPageToOcm = async ({
   distributorPage,
   repositoryId,
   language,
-  channelId
+  channelId,
 }: {
   distributorPage: ReturnType<typeof getMappedDistributorPages>[0];
   repositoryId: string;
   language: string;
-  channelId: string
+  channelId: string;
 }) => {
   const addressesOcmIds = (
     await Promise.all(
@@ -426,7 +449,7 @@ export const importDistributorPageToOcm = async ({
           address,
           repositoryId,
           language,
-          channelId
+          channelId,
         });
 
         return addressOcmId;
@@ -435,18 +458,21 @@ export const importDistributorPageToOcm = async ({
   ).map((addressAssetId) => ({ id: addressAssetId, type: IR_ADDRESS_TYPE }));
 
   try {
-    const distributorPageImportRes = await createItem({
-      name: distributorPage.assetName,
-      type: distributorPage.assetType,
-      description: distributorPage.url,
-      repositoryId,
-      language,
-      fields: {
-        ..._.omit(distributorPage.fields, ["url"]),
-        /** Workaround - looks like there can be only one address */
-        address: addressesOcmIds[0],
+    const distributorPageImportRes = await createItem(
+      {
+        name: distributorPage.assetName,
+        type: distributorPage.assetType,
+        description: distributorPage.url,
+        repositoryId,
+        language,
+        fields: {
+          ..._.omit(distributorPage.fields, ["url"]),
+          /** Workaround - looks like there can be only one address */
+          address: addressesOcmIds[0],
+        },
       },
-    }, [channelId]);
+      [channelId]
+    );
 
     return {
       distributorPageId: (distributorPageImportRes as { id: string }).id,
@@ -466,21 +492,24 @@ const importAddressToOcm = async ({
   address,
   repositoryId,
   language,
-  channelId
+  channelId,
 }: {
   address: ReturnType<typeof getMappedDistributorPages>[0]["addresses"][0];
   repositoryId: string;
   language: string;
   channelId: string;
 }): Promise<string> => {
-  const res = await createItem({
-    name: address.assetName,
-    type: address.assetType,
-    description: "Address asset created from Excel import",
-    repositoryId,
-    language,
-    fields: address.fields,
-  }, [channelId]);
+  const res = await createItem(
+    {
+      name: address.assetName,
+      type: address.assetType,
+      description: "Address asset created from Excel import",
+      repositoryId,
+      language,
+      fields: address.fields,
+    },
+    [channelId]
+  );
 
   if (res.id) {
     return res.id;
