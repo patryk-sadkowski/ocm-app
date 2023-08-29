@@ -1,0 +1,2132 @@
+Index: src/services/assets.service.ts
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.BaseRevisionTextPatchEP
+<+>import { ItemI, ItemSchema, ItemsSchema } from \"../types/repositories\";\r\nimport { z } from \"zod\";\r\n\r\nimport axiosClient from \"./api.service\";\r\n\r\nexport const fetchAllItems = async () => {\r\n  const { data } = await axiosClient.get(\"/items\");\r\n\r\n  return data;\r\n};\r\n\r\nexport const fetchAllItemsOfTypeFromRepositoryIdScroll = async (\r\n  repositoryId: string,\r\n  types: string[],\r\n  updateProgress?: (v: string) => void\r\n) => {\r\n  const limit = 500;\r\n\r\n  const ResponseSchema = z.object({\r\n    hasMore: z.boolean(),\r\n    offset: z.number(),\r\n    count: z.number(),\r\n    limit: z.number(),\r\n    items: ItemsSchema,\r\n    scrollId: z.string().optional(),\r\n  });\r\n\r\n  let items: any[] = [];\r\n\r\n  // loop through all types using foreach\r\n  for (const type of types) {\r\n    let scrollId = \"\";\r\n    while (true) {\r\n      const scrollParam = scrollId ? `&scrollId=${scrollId}` : \"scroll=true\";\r\n\r\n      const data = await axiosClient.get(\r\n        `/items?limit=${limit}&q=repositoryId eq \"${repositoryId}\" AND (type eq \"${type}\")&${scrollParam}&scrollTTL=5000`\r\n      );\r\n\r\n      const parsedData = ResponseSchema.passthrough().parse(data?.data);\r\n\r\n      items = [...items, ...parsedData.items].flatMap((i) => i);\r\n\r\n      if (parsedData.count <= 0 || !parsedData.scrollId) {\r\n        break;\r\n      }\r\n\r\n      scrollId = parsedData.scrollId;\r\n\r\n      updateProgress &&\r\n        updateProgress(\r\n          `${items.filter((i) => i.type === type).length} / ${\r\n            parsedData.limit\r\n          } (${type})`\r\n        );\r\n    }\r\n  }\r\n\r\n  return items;\r\n};\r\n\r\nexport const fetchAllItemsOfTypeFromRepositoryIdLimits = async (\r\n  repositoryId: string,\r\n  types: string[]\r\n) => {\r\n  const limit = 500;\r\n\r\n  const ResponseSchema = z.object({\r\n    hasMore: z.boolean(),\r\n    offset: z.number(),\r\n    count: z.number(),\r\n    limit: z.number(),\r\n    items: ItemsSchema,\r\n  });\r\n\r\n  let items: any[] = [];\r\n\r\n  // loop through all types using foreach\r\n  for (const type of types) {\r\n    // get all items using response fields limit (total), offset (pagination) and hasMore (boolean)\r\n    let hasMore = true;\r\n    let offset = 0;\r\n\r\n    while (hasMore) {\r\n      const data = await axiosClient.get(\r\n        `/items?limit=${limit}&offset=${offset}&q=repositoryId eq \"${repositoryId}\" AND (type eq \"${type}\")`\r\n      );\r\n\r\n      const parsedData = ResponseSchema.passthrough().parse(data?.data);\r\n      items = [...items, ...parsedData.items];\r\n      hasMore = parsedData.hasMore;\r\n      offset += limit;\r\n    }\r\n  }\r\n\r\n  return items.flatMap((i) => i);\r\n};\r\n\r\nexport const fetchAllItemsOfTypeFromRepositoryId = async (\r\n  repositoryId: string,\r\n  types: string[]\r\n): Promise<ItemI[]> => {\r\n  const data = await Promise.all(\r\n    types.map((type) =>\r\n      axiosClient.get(\r\n        `/items?limit=10000&q=repositoryId eq \"${repositoryId}\" AND (type eq \"${type}\")`\r\n      )\r\n    )\r\n  );\r\n\r\n  const flatData = data.flatMap((d) => d.data.items);\r\n  return flatData;\r\n};\r\n\r\nexport const fetchAllItemsFromRepositoryById = async (id: string) => {\r\n  const { data } = await axiosClient(\r\n    `/items?orderBy=updatedDate:desc&totalResults=true&includeAdditionalData=true&links=none&fields=id,name,type,updatedDate,updatedBy,status,fileGroup,translatable,language,varSetId,languageIsMaster,versionInfo,isPublished,repositoryId,changes,typeCategory,advancedVideoInfo,lockInfo,scheduled,workflowInstances,fileExtension,connectorFileInfo&returnMaster=true&aggs={%22name%22:%22item_count_per_category%22,%22field%22:%22id%22}&limit=1000&offset=0&q=repositoryId%20eq%20%22${id}%22`\r\n  );\r\n\r\n  return data.items;\r\n};\r\n\r\nexport const fetchItemByID = async (id: string) => {\r\n  const { data } = await axiosClient.get(`/items/${id}`);\r\n\r\n  return data;\r\n};\r\n\r\nexport const fetchAllItemsFromRepoWithChineseLang = async (repoID: string) => {\r\n  const { data } = await axiosClient.get(\r\n    `/items?limit=10000&q=repositoryId%20eq%20%22${repoID}%22%20AND%20(language%20eq%20%22zh-CN%22)`\r\n  );\r\n\r\n  return data;\r\n};\r\n\r\nexport const fetchAllItemsFromReposWithChineseLang = async (\r\n  repoIDs: Array<string>\r\n): Promise<any> => {\r\n  const items = [];\r\n  let fetchedRepos = 0;\r\n\r\n  for (let index = 0; index < repoIDs.length; index++) {\r\n    try {\r\n      const ID = repoIDs[index];\r\n      const { items: repoItems } = await fetchAllItemsFromRepoWithChineseLang(\r\n        ID\r\n      );\r\n      fetchedRepos++;\r\n      items.push(...repoItems);\r\n      console.clear();\r\n      console.log(`Fetched ${fetchedRepos} from ${repoIDs.length}`);\r\n    } catch (error) {\r\n      console.error(`Attempt: ${index}. ${(error as Error).message}`);\r\n    }\r\n  }\r\n\r\n  return items;\r\n};\r\n\r\nexport const updateItem = async (itemID: string, payload: any) => {\r\n  try {\r\n    const currentItem = await fetchItemByID(itemID);\r\n    const newFields = { ...currentItem.fields, ...payload.fields };\r\n    const newPayload = { ...payload, fields: newFields };\r\n    const { data } = await axiosClient.put(\r\n      `/items/${itemID}`,\r\n      JSON.stringify({ ...currentItem, ...newPayload }),\r\n      {\r\n        headers: {\r\n          \"Content-Type\": \"application/json\",\r\n          \"X-Requested-With\": \"XMLHttpRequest\",\r\n        },\r\n      }\r\n    );\r\n    return data;\r\n  } catch (error) {\r\n    console.log(error);\r\n    console.error((error as Error).message);\r\n    return false;\r\n  }\r\n};\r\n\r\nexport const updateItems = async (\r\n  items: Array<{ itemID: string; payload: any }>\r\n) => {\r\n  for (let index = 0; index < items.length; index++) {\r\n    const { itemID, payload } = items[index];\r\n    try {\r\n      await updateItem(itemID, payload);\r\n    } catch (error) {\r\n      console.error((error as Error).message);\r\n      return false;\r\n    }\r\n  }\r\n\r\n  return true;\r\n};\r\n\r\nexport const filterAssetsWithChineseNames = (assets: Array<any>) => {\r\n  const reg = new RegExp(\"[^a-zA-Z0-9$&+,:;=?@#|'<>.^*()%!-_ ]\", \"g\");\r\n  return assets.filter((asset) => reg.exec(asset.name) !== null);\r\n};\r\n\r\nexport const getItemVariations = async (id: string): Promise<Array<any>> => {\r\n  const { data } = await axiosClient(`items/${id}/variations`);\r\n  return data.data[0].items;\r\n};\r\n\r\nexport const getReferencedByForAsset = async (\r\n  assetId: string,\r\n  funcToExecuteAfter?: () => void\r\n) => {\r\n  // https://ircxprd01-iroraclecloud.cec.ocp.oraclecloud.com/content/management/api/v1.1/items/COREC007579556A1448AA96ACDC05E45059A?expand=relationships&includeAdditionalData=false&links=none\r\n  const { data } = await axiosClient(\r\n    `/items/${assetId}?expand=relationships&includeAdditionalData=false&links=none`\r\n  );\r\n\r\n  // console.log('DATA', data);\r\n  funcToExecuteAfter && funcToExecuteAfter();\r\n\r\n  // const ResponseSchema = z.object({\r\n  //   hasMore: z.boolean(),\r\n  //   offset: z.number(),\r\n  //   count: z.number(),\r\n  //   limit: z.number(),\r\n  //   items: ItemsSchema,\r\n  // });\r\n\r\n  return data;\r\n};\r\n\r\ntype GenericItemPayload = {\r\n  name: string;\r\n  type: string;\r\n  description?: string;\r\n  slug?: string;\r\n  repositoryId: string;\r\n  language: string;\r\n  translatable?: boolean;\r\n  [key: string]: any;\r\n};\r\n\r\nexport const createItem = async <T extends GenericItemPayload>(\r\n  item: T,\r\n  channelIds?: string[]\r\n) => {\r\n  const { data } = await axiosClient.post(\r\n    `/items`,\r\n    JSON.stringify({\r\n      ...item,\r\n      channels: channelIds ? { data: channelIds.map((id) => ({ id })) } : null,\r\n    }),\r\n    {\r\n      headers: {\r\n        \"Content-Type\": \"application/json\",\r\n        \"X-Requested-With\": \"XMLHttpRequest\",\r\n      },\r\n    }\r\n  );\r\n\r\n  return data;\r\n};\r\n\r\n/** Doesn't work, throws 400. */\r\nexport const _deleteItem = async (itemID: string) => {\r\n  const data = await axiosClient.delete(`/items/${itemID}`);\r\n  return data.status === 204;\r\n};\r\n\r\n/**\r\n * Doesn't work, not sure why. Throws 400.\r\n */\r\nexport const _deleteItems = async (itemIds: string[]) => {\r\n  const data = await axiosClient.post(\r\n    `/bulkItemsOperations`,\r\n    JSON.stringify({\r\n      operations: {\r\n        deleteItems: {\r\n          value: true,\r\n        },\r\n      },\r\n      q: `id eq \"${itemIds.join('\" OR id eq \"')}\"`,\r\n    }),\r\n    {\r\n      headers: {\r\n        \"Content-Type\": \"application/json\",\r\n      },\r\n    }\r\n  );\r\n\r\n  return data.status === 200;\r\n};\r\n
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/src/services/assets.service.ts b/src/services/assets.service.ts
+--- a/src/services/assets.service.ts	(revision 068450b29696718f2ee70759ef2a5ca16aae762c)
++++ b/src/services/assets.service.ts	(date 1693252504211)
+@@ -8,11 +8,30 @@
+ 
+   return data;
+ };
++const createURI = (
++    repositoryId: string,
++    type: string,
++    limit: number,
++    scrollParam: string,
++    options?: { onlyMaster?: boolean }
++): string => {
++  let baseURI = `/items?limit=${limit}&q=repositoryId eq "${repositoryId}" AND (type eq "${type}")`;
++
++  if (options?.onlyMaster) {
++    baseURI += ' AND (languageIsMaster eq "true")';
++  }
++
++  const scrollSettings = `&${scrollParam}&scrollTTL=5000`;
++
++  return baseURI + scrollSettings;
++}
++
+ 
+ export const fetchAllItemsOfTypeFromRepositoryIdScroll = async (
+   repositoryId: string,
+   types: string[],
+-  updateProgress?: (v: string) => void
++  updateProgress?: (v: string) => void,
++  options?: { onlyMaster?: boolean }
+ ) => {
+   const limit = 500;
+ 
+@@ -32,9 +51,10 @@
+     let scrollId = "";
+     while (true) {
+       const scrollParam = scrollId ? `&scrollId=${scrollId}` : "scroll=true";
++      let URI = createURI(repositoryId, type, limit, scrollParam, options);
+ 
+       const data = await axiosClient.get(
+-        `/items?limit=${limit}&q=repositoryId eq "${repositoryId}" AND (type eq "${type}")&${scrollParam}&scrollTTL=5000`
++          URI
+       );
+ 
+       const parsedData = ResponseSchema.passthrough().parse(data?.data);
+@@ -158,11 +178,19 @@
+   return items;
+ };
+ 
+-export const updateItem = async (itemID: string, payload: any) => {
++export const updateItem = async (itemID: string, payload: any, options?: {
++  onlyFields?: boolean
++}) => {
+   try {
+     const currentItem = await fetchItemByID(itemID);
+     const newFields = { ...currentItem.fields, ...payload.fields };
+-    const newPayload = { ...payload, fields: newFields };
++    let newPayload;
++    if(options?.onlyFields) {
++        newPayload = { fields: newFields };
++    } else {
++        newPayload = { ...payload, fields: newFields };
++    }
++    debugger
+     const { data } = await axiosClient.put(
+       `/items/${itemID}`,
+       JSON.stringify({ ...currentItem, ...newPayload }),
+@@ -216,17 +244,8 @@
+     `/items/${assetId}?expand=relationships&includeAdditionalData=false&links=none`
+   );
+ 
+-  // console.log('DATA', data);
+   funcToExecuteAfter && funcToExecuteAfter();
+ 
+-  // const ResponseSchema = z.object({
+-  //   hasMore: z.boolean(),
+-  //   offset: z.number(),
+-  //   count: z.number(),
+-  //   limit: z.number(),
+-  //   items: ItemsSchema,
+-  // });
+-
+   return data;
+ };
+ 
+Index: src/components/ConfirmButton.tsx
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/src/components/ConfirmButton.tsx b/src/components/ConfirmButton.tsx
+new file mode 100644
+--- /dev/null	(date 1693246983190)
++++ b/src/components/ConfirmButton.tsx	(date 1693246983190)
+@@ -0,0 +1,76 @@
++import {
++    Button,
++    Modal,
++    ModalOverlay,
++    ModalContent,
++    ModalHeader,
++    ModalFooter,
++    ModalBody,
++    ModalCloseButton,
++    useDisclosure,
++    Spinner
++} from "@chakra-ui/react";
++import React, { useState } from "react";
++
++interface ConfirmationButtonProps {
++    onConfirm: () => Promise<void> | void; // Consider onConfirm may return a Promise
++    buttonText: string;
++    confirmationMessage: string;
++    confirmButtonText?: string;
++    cancelButtonText?: string;
++    isDisabled?: boolean;
++}
++
++const ConfirmationButton: React.FC<ConfirmationButtonProps> = ({
++                                                                   onConfirm,
++                                                                   buttonText,
++                                                                   confirmationMessage,
++                                                                   confirmButtonText = "Confirm",
++                                                                   cancelButtonText = "Cancel",
++                                                                   isDisabled = false
++                                                               }) => {
++    const { isOpen, onOpen, onClose } = useDisclosure();
++    const [isLoading, setIsLoading] = useState(false);
++
++    const handleConfirm = async () => {
++        setIsLoading(true);
++        try {
++            await onConfirm(); // Await in case onConfirm returns a promise
++        } catch (error) {
++            console.error("Error during confirmation:", error);
++        }
++        setIsLoading(false);
++        onClose();
++    };
++
++    return (
++        <>
++            <Button colorScheme={"red"} onClick={onOpen} isDisabled={isDisabled || isLoading}>
++                {buttonText}
++            </Button>
++
++            <Modal isOpen={isOpen} onClose={onClose}>
++                <ModalOverlay />
++                <ModalContent>
++                    <ModalHeader>Confirmation</ModalHeader>
++                    <ModalCloseButton />
++                    <ModalBody>
++                        {confirmationMessage}
++                    </ModalBody>
++
++                    <ModalFooter>
++                        <Button colorScheme="blue" mr={3} onClick={handleConfirm} isLoading={isLoading}>
++                            {isLoading ? <Spinner size="xs" marginRight={2} /> : null}
++                            {confirmButtonText}
++                        </Button>
++                        <Button variant="ghost" onClick={onClose} isDisabled={isLoading}>
++                            {cancelButtonText}
++                        </Button>
++                    </ModalFooter>
++                </ModalContent>
++            </Modal>
++        </>
++    );
++};
++
++export default ConfirmationButton;
+Index: src/components/WithPasswordProtection.tsx
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/src/components/WithPasswordProtection.tsx b/src/components/WithPasswordProtection.tsx
+new file mode 100644
+--- /dev/null	(date 1693251619383)
++++ b/src/components/WithPasswordProtection.tsx	(date 1693251619383)
+@@ -0,0 +1,150 @@
++import React, {useState, useRef, useEffect, ReactNode} from "react";
++import {
++    Modal,
++    ModalOverlay,
++    ModalContent,
++    ModalHeader,
++    ModalBody,
++    ModalCloseButton,
++    Button,
++    Input,
++    FormControl,
++    FormLabel,
++    Alert,
++    AlertIcon,
++    AlertDescription, Center, Box, Text
++} from "@chakra-ui/react";
++import {DropboxCLI} from "./Dropbox";
++
++interface PasswordDialogProps {
++    isOpen: boolean;
++    onClose: () => void;
++    onPasswordSubmit: (password: string) => void;
++}
++
++const PasswordDialog: React.FC<PasswordDialogProps> = ({ isOpen, onClose, onPasswordSubmit }) => {
++    const [password, setPassword] = useState("");
++    const [isInvalid, setIsInvalid] = useState(false);
++
++    const handleSubmit = () => {
++        if (password) {
++            onPasswordSubmit(password);
++        } else {
++            setIsInvalid(true);
++        }
++    };
++
++    return (
++        <Modal isOpen={isOpen} onClose={onClose}>
++            <ModalOverlay />
++            <ModalContent>
++                <ModalHeader>Enter Password</ModalHeader>
++                <ModalCloseButton />
++                <ModalBody pb={6}>
++                    <FormControl>
++                        <FormLabel>Password</FormLabel>
++                        <Input
++                            type="password"
++                            value={password}
++                            onChange={(e) => setPassword(e.target.value)}
++                        />
++                    </FormControl>
++                    {isInvalid && (
++                        <Alert status="error" mt={4}>
++                            <AlertIcon />
++                            <AlertDescription>Wrong Password.</AlertDescription>
++                        </Alert>
++                    )}
++                    <Button mt={4} colorScheme="teal" onClick={handleSubmit}>
++                        Login
++                    </Button>
++                </ModalBody>
++            </ModalContent>
++        </Modal>
++    );
++};
++
++interface PasswordProtectionProps {
++    children: ReactNode;
++    password: string;
++}
++
++const PasswordProtection: React.FC<PasswordProtectionProps> = ({ children, password }) => {
++    const [isAuthenticated, setIsAuthenticated] = useState(false);
++    const [isDialogOpen, setIsDialogOpen] = useState(false);
++    const [hasAttemptedAuthentication, setHasAttemptedAuthentication] = useState(false);
++    const promptShownRef = useRef(false);
++
++    useEffect(() => {
++        const checkAuthentication = () => {
++            const authSession = sessionStorage.getItem('isAuthenticated');
++            if (authSession === "true") {
++                setIsAuthenticated(true);
++                return true;
++            }
++            return false;
++        }
++
++        if (!checkAuthentication() && !promptShownRef.current) {
++            setIsDialogOpen(true);
++            promptShownRef.current = true;
++        }
++    }, [password]);
++
++    const handlePasswordSubmit = async (enteredPassword: string) => {
++        if (enteredPassword) {
++            debugger
++            try {
++                debugger
++                const dropbox = new DropboxCLI(enteredPassword)
++                await dropbox.connectionTest();
++                setIsAuthenticated(true);
++                setIsDialogOpen(false);
++                sessionStorage.setItem('isAuthenticated', "true");
++                sessionStorage.setItem('API-KEY', enteredPassword);
++            } catch (e) {
++                console.log("ERROR", e)
++            }
++
++        } else {
++            setIsDialogOpen(false);
++            setHasAttemptedAuthentication(true);
++        }
++    };
++
++    return (
++        <>
++            {isAuthenticated ? (
++                children
++            ) : (
++                <>
++                    {isDialogOpen && (
++                        <PasswordDialog
++                            isOpen={isDialogOpen}
++                            onClose={() => {
++                                setIsDialogOpen(false);
++                                setHasAttemptedAuthentication(true);
++                            }}
++                            onPasswordSubmit={handlePasswordSubmit}
++                        />
++                    )}
++                    {hasAttemptedAuthentication && (
++                        <Center height="80vh">
++                            <Box
++                                padding="20px"
++                                boxShadow="lg"
++                                borderRadius="md"
++                                bg="red.500"
++                                color="white"
++                            >
++                                <Text fontSize="xl">No Access</Text>
++                            </Box>
++                        </Center>
++                    )}
++                </>
++            )}
++        </>
++    );
++};
++
++export default PasswordProtection;
+Index: src/services/files.service.ts
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.BaseRevisionTextPatchEP
+<+>import * as XLSX from \"xlsx\";\r\n\r\nexport const saveJSONToExcelFile = (\r\n  json: any,\r\n  fileName: string,\r\n  sheetName = \"OCM\"\r\n) => {\r\n  return new Promise((resolve, reject) => {\r\n    try {\r\n      const worksheet = XLSX.utils.json_to_sheet(json);\r\n      const workbook = XLSX.utils.book_new();\r\n      XLSX.utils.book_append_sheet(workbook, worksheet, sheetName);\r\n      XLSX.writeFile(workbook, fileName);\r\n      resolve(true);\r\n    } catch (err) {\r\n      console.error(err);\r\n      reject(false);\r\n    }\r\n  });\r\n};\r\n\r\nexport const getJSONFromExcelFile = (filePath: string) => {\r\n  return new Promise((resolve, reject) => {\r\n    try {\r\n      const workbook = XLSX.readFile(filePath);\r\n      const sheetName = workbook.SheetNames[0];\r\n      const worksheet = workbook.Sheets[sheetName];\r\n      const json = XLSX.utils.sheet_to_json(worksheet);\r\n      resolve(json);\r\n    } catch (err) {\r\n      console.error(err);\r\n      reject(false);\r\n    }\r\n  });\r\n};\r\n\r\nconst handleDropAsync = async (e: any) => {\r\n  e.stopPropagation();\r\n  e.preventDefault();\r\n  const f = e.dataTransfer.files[0];\r\n  /* f is a File */\r\n  const data = await f.arrayBuffer();\r\n  /* data is an ArrayBuffer */\r\n  const workbook = XLSX.read(data);\r\n\r\n  /* DO SOMETHING WITH workbook HERE */\r\n};\r\n\r\nexport const readExcelFile = async (file: File) => {\r\n  const data = await file.arrayBuffer();\r\n  /* data is an ArrayBuffer */\r\n  const workbook = XLSX.read(data);\r\n  const sheetName = workbook.SheetNames[0];\r\n  const worksheet = workbook.Sheets[sheetName];\r\n  const json = XLSX.utils.sheet_to_json(worksheet);\r\n  console.log('Excel:', json)\r\n  return json;\r\n};\r\n
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/src/services/files.service.ts b/src/services/files.service.ts
+--- a/src/services/files.service.ts	(revision 068450b29696718f2ee70759ef2a5ca16aae762c)
++++ b/src/services/files.service.ts	(date 1693252779755)
+@@ -1,13 +1,32 @@
+ import * as XLSX from "xlsx";
++import {IRFile} from "../types/repositories";
++
++export const flattenObject = (obj: any, prefix: string = ""): any => {
++  if (obj instanceof Date) {
++    return { [prefix]: obj.toLocaleString() };
++  }
++
++  if (typeof obj !== "object" || obj === null) {
++    return { [prefix]: obj };
++  }
++
++  return Object.keys(obj).reduce((acc, k) => {
++    const pre = prefix.length ? prefix + "." + k : k;
++    Object.assign(acc, flattenObject(obj[k], pre));
++    return acc;
++  }, {});
++};
+ 
+ export const saveJSONToExcelFile = (
+   json: any,
+   fileName: string,
+-  sheetName = "OCM"
++  sheetName = "OCM",
++  nestedFields = false,
+ ) => {
+   return new Promise((resolve, reject) => {
+     try {
+-      const worksheet = XLSX.utils.json_to_sheet(json);
++      const computedJson = nestedFields ? json.map((o: IRFile) => flattenObject(o)) : json;
++      const worksheet = XLSX.utils.json_to_sheet(computedJson);
+       const workbook = XLSX.utils.book_new();
+       XLSX.utils.book_append_sheet(workbook, worksheet, sheetName);
+       XLSX.writeFile(workbook, fileName);
+@@ -19,21 +38,6 @@
+   });
+ };
+ 
+-export const getJSONFromExcelFile = (filePath: string) => {
+-  return new Promise((resolve, reject) => {
+-    try {
+-      const workbook = XLSX.readFile(filePath);
+-      const sheetName = workbook.SheetNames[0];
+-      const worksheet = workbook.Sheets[sheetName];
+-      const json = XLSX.utils.sheet_to_json(worksheet);
+-      resolve(json);
+-    } catch (err) {
+-      console.error(err);
+-      reject(false);
+-    }
+-  });
+-};
+-
+ const handleDropAsync = async (e: any) => {
+   e.stopPropagation();
+   e.preventDefault();
+@@ -56,3 +60,106 @@
+   console.log('Excel:', json)
+   return json;
+ };
++
++export const unflattenObject = (data: any): any => {
++  const result: any = {};
++
++  for (const key of Object.keys(data)) {
++    const keys = key.split('.');
++    let current = result;
++
++    for (let i = 0; i < keys.length; i++) {
++      if (i === keys.length - 1) {
++        current[keys[i]] = data[key];
++      } else {
++        current[keys[i]] = current[keys[i]] || {};
++        current = current[keys[i]];
++      }
++    }
++  }
++
++  return result;
++};
++
++type Mapping = { import: string; download: string };
++
++export const processExcelFiles = async (
++    fileA: File,
++    fileB: File,
++    keyField: string,
++    mappings: Mapping[]
++) => {
++  const workbookA = XLSX.read(await fileA.arrayBuffer(), { type: 'buffer' });
++  const workbookB = XLSX.read(await fileB.arrayBuffer(), { type: 'buffer' });
++
++  const sheetA = workbookA.Sheets[workbookA.SheetNames[0]];
++  const sheetB = workbookB.Sheets[workbookB.SheetNames[0]];
++
++  const dataA: any[] = XLSX.utils.sheet_to_json(sheetA);
++  const dataB: any[] = XLSX.utils.sheet_to_json(sheetB);
++
++  const matchedObjects: any[] = [];
++  const unmatchedObjects: any[] = [];
++  const reversalObjects: any[] = [];
++
++  dataA.forEach(objA => {
++    const correspondingObjB = dataB.find(objB => objB[keyField] === objA[keyField]);
++
++    if (correspondingObjB) {
++      const mergedObject: any = { id: objA.id};
++      const reversalObject = { ...objA };
++      let isChanged = false;
++
++      mappings.forEach(mapping => {
++        reversalObject[mapping.download] = correspondingObjB[mapping.import];
++
++        // Check if the value has changed
++        if (objA[mapping.download] !== correspondingObjB[mapping.import]) {
++          mergedObject[mapping.download] = correspondingObjB[mapping.import];
++          isChanged = true;
++        }
++      });
++
++      // Always include the 'id' field
++      mergedObject[keyField] = objA[keyField];
++
++      // Only push to matchedObjects if there's any change
++      if (isChanged) {
++        matchedObjects.push(mergedObject);
++      }
++
++      reversalObjects.push(reversalObject);
++    } else {
++      unmatchedObjects.push(objA);
++    }
++  });
++
++  // Create Excel for unmatched objects
++  const unmatchedWorkbook = XLSX.utils.book_new();
++  const unmatchedWorksheet = XLSX.utils.json_to_sheet(unmatchedObjects);
++  XLSX.utils.book_append_sheet(unmatchedWorkbook, unmatchedWorksheet, 'Unmatched');
++  const unmatchedExcelBuffer = XLSX.write(unmatchedWorkbook, { bookType: 'xlsx', type: 'buffer' });
++
++  // Create Excel for matched objects
++  const matchedWorkbook = XLSX.utils.book_new();
++  const matchedWorksheet = XLSX.utils.json_to_sheet(matchedObjects);
++  XLSX.utils.book_append_sheet(matchedWorkbook, matchedWorksheet, 'Matched');
++  const matchedExcelBuffer = XLSX.write(matchedWorkbook, { bookType: 'xlsx', type: 'buffer' });
++
++  // Create Excel for reversal objects in the same workbook as matched
++  const matchedAndReversalWorkbook = XLSX.utils.book_new();
++  XLSX.utils.book_append_sheet(matchedAndReversalWorkbook, matchedWorksheet, 'Matched');
++  const reversalWorksheet = XLSX.utils.json_to_sheet(reversalObjects);
++  XLSX.utils.book_append_sheet(matchedAndReversalWorkbook, reversalWorksheet, 'Reversal');
++  const matchedAndReversalExcelBuffer = XLSX.write(matchedAndReversalWorkbook, { bookType: 'xlsx', type: 'buffer' });
++
++  return {
++    unmatchedExcel: unmatchedExcelBuffer,
++    matchedExcel: matchedExcelBuffer, // Return matched excel separately
++    matchedAndReversalExcel: matchedAndReversalExcelBuffer,
++    matchedObjects: matchedObjects,
++    unmatchedObjects: unmatchedObjects,
++    reversalObjects: reversalObjects
++  };
++};
++
+Index: src/components/Dropbox.ts
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/src/components/Dropbox.ts b/src/components/Dropbox.ts
+new file mode 100644
+--- /dev/null	(date 1693251731512)
++++ b/src/components/Dropbox.ts	(date 1693251731512)
+@@ -0,0 +1,82 @@
++import axios from "axios";
++
++export class DropboxCLI {
++
++    private static BASE_URL = "https://content.dropboxapi.com/2/files/upload";
++    private readonly accessToken: string;
++
++    constructor(accessToken: string) {
++        this.accessToken = accessToken;
++    }
++
++    public async connectionTest() {
++        try {
++            const response = await axios.post("https://api.dropboxapi.com/2/files/list_folder", {
++                path: "/Aplikacje/IR-Backup",
++            }, {
++                headers: this.getTestHeaders()
++            });
++            return response.data;
++        } catch (error) {
++            throw new Error(`Failed to connect to Dropbox. Error: ${error}`);
++        }
++    }
++
++    private getTestHeaders() {
++        return {
++            'Authorization': `Bearer ${this.accessToken}`,
++            'Content-Type': 'application/json',
++        };
++    }
++
++    private getHeaders(path: string) {
++        return {
++            'Authorization': `Bearer ${this.accessToken}`,
++            'Dropbox-API-Arg': JSON.stringify({
++                path: `/Aplikacje/IR-Backup/${path}`,
++                mode: 'add',
++                autorename: true,
++                mute: false
++            }),
++            'Content-Type': 'application/octet-stream',
++        };
++    }
++
++    async uploadFile(file: File, path: string) {
++        try {
++            const response = await axios.post(DropboxCLI.BASE_URL, file, {
++                headers: this.getHeaders(path),
++                onUploadProgress: (progressEvent: any) => {
++                    if (progressEvent.total) {
++                        const percentCompleted = Math.round((progressEvent.loaded * 100) / progressEvent.total);
++                        console.log(`Upload progress: ${percentCompleted}%`);
++                    }
++                }
++            });
++            return response.data;
++        } catch (error) {
++            throw new Error(`Failed to upload the file. Error: ${error}`);
++        }
++    }
++
++    async logChange(metadata: { user: string, location: string, timestamp: Date }, changeFile: File) {
++        const logPath = '/logs/logbook.txt';
++        const changePath = `/backups/${metadata.user}-${metadata.timestamp.toISOString()}.backup`;
++
++        // Create log entry
++        const logEntry = `${metadata.timestamp.toISOString()}: User: ${metadata.user}, Location: ${metadata.location}\n`;
++        const logBlob = new Blob([logEntry], {type: 'text/plain'});
++
++        try {
++            // Append log entry to logbook
++            await this.uploadFile(logBlob as any, logPath);
++            console.log("Log entry saved to Dropbox.");
++
++            // Upload backup file
++            await this.uploadFile(changeFile, changePath);
++            console.log("Backup saved to Dropbox.");
++        } catch (error) {
++            console.error("Failed to save log entry or backup to Dropbox.", error);
++        }
++    }
++}
+Index: src/routes/InfinityIQ.tsx
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/src/routes/InfinityIQ.tsx b/src/routes/InfinityIQ.tsx
+new file mode 100644
+--- /dev/null	(date 1693252949179)
++++ b/src/routes/InfinityIQ.tsx	(date 1693252949179)
+@@ -0,0 +1,254 @@
++import {useSearchParams} from "react-router-dom";
++import {
++    Box,
++    Button,
++    Card,
++    CardBody,
++    CardHeader, Checkbox,
++    Flex,
++    Heading, useToast,
++} from "@chakra-ui/react";
++import {useState} from "react";
++import {DownloadIcon, SettingsIcon} from "@chakra-ui/icons";
++import AssetDownloader from "../components/AssetDownloader";
++import FileUpload from "../components/FileUpload";
++import ExcelSettingsModal from "../components/ExcelSettingsModal";
++import * as XLSX from "xlsx";
++import {processExcelFiles, unflattenObject} from "../services/files.service";
++import ConfirmationButton from "../components/ConfirmButton";
++import {DropboxCLI} from "../components/Dropbox";
++import {upload} from "@testing-library/user-event/dist/upload";
++import {useAuth} from "../context/AuthContext";
++import {updateItem} from "../services/assets.service";
++import {publishItemById} from "../services/bulk.service";
++
++const InfinityIQ = () => {
++    const [file, setFile] = useState<File | null>(null)
++    const [secondFile, setSecondFile] = useState<File | null>(null)
++    const [isModalOpen, setIsModalOpen] = useState<boolean>(false)
++    const [downloadHeaders, setDownloadHeaders] = useState<string[]>([])
++    const [importHeaders, setImportHeaders] = useState<string[]>([])
++    const [matchedExcel, setMatchedExcel] = useState<ArrayBuffer | null>(null)
++    const [unmatchedExcel, setUnmatchedExcel] = useState<ArrayBuffer | null>(null)
++    const [matchedObjects, setMatchedObjects] = useState<any[]>([])
++    const [unmatchedObjects, setUnmatchedObjects] = useState<any[]>([])
++    const [matchedAndReversalExcel, setMatchedAndReversalExcel] = useState<File | null>(null)
++    const [publishAssets, setPublishAssets] = useState<boolean>(false)
++    const [publishingStatus, setPublishingStatus] = useState<string>("")
++    const [isUpdating, setIsUpdating] = useState<boolean>(false)
++    const dropbox = new DropboxCLI(sessionStorage.getItem('API-KEY') || '')
++    const toast = useToast();
++    const {user} = useAuth();
++
++    const onTopFileDropHandler = async (files: File[]) => {
++        if (files.length === 0) return
++        if (files[0] === null) return;
++        setFile(files[0])
++        setDownloadHeaders(await getHeaders(files[0]))
++    }
++
++    const onBottomFileDropHandler = async (files: File[]) => {
++        if (files.length === 0) return
++        if (files[0] === null) return;
++        setSecondFile(files[0])
++        setImportHeaders(await getHeaders(files[0]))
++    }
++
++    function getHeaders(file: File): Promise<string[]> {
++        return new Promise((resolve, reject) => {
++            const reader = new FileReader();
++
++            reader.onload = function (e: ProgressEvent<FileReader>) {
++                if (e.target && e.target.result) {
++                    const data = e.target.result as string;
++
++                    // Read the workbook
++                    const workbook = XLSX.read(data, {type: 'binary'});
++
++                    // Get the first sheet name
++                    const firstSheetName = workbook.SheetNames[0];
++                    const worksheet = workbook.Sheets[firstSheetName];
++
++                    // Convert the sheet to JSON
++                    const json: any[][] = XLSX.utils.sheet_to_json(worksheet, {header: 1});
++
++                    // Assuming the first row of the sheet is the header
++                    const headers = json[0] as string[];
++
++                    resolve(headers);
++                } else {
++                    reject(new Error("Failed to read the file."));
++                }
++            };
++
++            reader.onerror = function (e) {
++                reject(new Error("Error reading the file."));
++            };
++
++            reader.readAsBinaryString(file);
++        });
++    }
++
++    async function handleMappingConfirmed(mapping: { import: string; download: string }[], keyField: string | null) {
++        if (!keyField) return;
++        if (mapping.length === 0) return;
++
++        if (file && secondFile) {
++            const result = await processExcelFiles(file, secondFile, keyField, mapping);
++            setUnmatchedExcel(result.unmatchedExcel);
++            setMatchedExcel(result.matchedExcel);
++            setMatchedObjects(result.matchedObjects);
++            setUnmatchedObjects(result.unmatchedObjects);
++            setMatchedAndReversalExcel(result.matchedAndReversalExcel)
++            debugger;
++        } else {
++            toast({
++                title: "Error",
++                description: "Both Excel files must be uploaded.",
++                status: "error",
++                duration: 9000,
++                isClosable: true,
++            });
++        }
++    }
++
++    const onUnmatchedExcelDownloadButtonClick = () => {
++        if (unmatchedExcel) {
++            saveBufferToExcelFile(unmatchedExcel, 'unmachted-assets.xlsx');
++        }
++    }
++
++    const onMatchedExcelDownloadButtonClick = () => {
++        if (matchedExcel) {
++            saveBufferToExcelFile(matchedExcel, 'machted-assets.xlsx');
++        }
++    }
++
++    function saveBufferToExcelFile(buffer: ArrayBuffer, filename: string) {
++        if (buffer) {
++            const blob = new Blob([buffer], {type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
++            const link = document.createElement('a');
++            link.href = window.URL.createObjectURL(blob);
++            link.download = filename;
++            link.click();
++        }
++    }
++
++    async function onAssetsUpdate() {
++        debugger
++        if (matchedObjects.length === 0) {
++            toast({
++                title: "Error",
++                description: "No assets to update.",
++                status: "error",
++                duration: 9000,
++                isClosable: true,
++            })
++            return;
++        }
++
++        if (matchedExcel && unmatchedExcel && matchedAndReversalExcel) {
++            setIsUpdating(true);
++            const unflattenMatchedObjects = matchedObjects.map(obj => unflattenObject(obj));
++
++            let counter = 0;
++            let total = unflattenMatchedObjects.length;
++            const fileName = `${user?.displayName}-${new Date().toISOString()}.xlsx`
++            await uploadBackup(matchedAndReversalExcel, fileName);
++            for (const asset of unflattenMatchedObjects) {
++                try {
++                    const {id, ...rest} = asset;
++                    const result = await updateItem(id, rest, {
++                        onlyFields: true,
++                    });
++                    if (publishAssets) {
++                        await publishItemById(id);
++                        setPublishingStatus(`Publishing ${counter} of ${total}`);
++                        counter++;
++                    }
++
++                } catch (e) {
++                    console.log("ERROR:", e);
++                }
++
++                toast({
++                    title: "Success",
++                    description: `Asset ${counter} of ${total} updated.`,
++                    status: "success",
++                    duration: 9000,
++                    isClosable: true,
++                })
++            }
++            setIsUpdating(false);
++        }
++
++        async function uploadBackup(file: File, name: string) {
++            if (matchedAndReversalExcel) {
++                await dropbox.uploadFile(file, name)
++            }
++        }
++    }
++
++    return <>
++        <Box padding={5} maxW={800} margin="auto" borderRadius="md">
++            <Flex gap={8} direction={"column"}>
++
++                <Card borderRadius="md" overflow="hidden">
++                    <CardHeader padding={4}>
++                        <Heading size="md">Download assets from repository</Heading>
++                    </CardHeader>
++                    <CardBody padding={4}>
++                        <AssetDownloader/>
++                    </CardBody>
++                </Card>
++
++                <Card borderRadius="md" overflow="hidden">
++                    <CardHeader padding={4}>
++                        <Heading size="md">Upload assets to repository</Heading>
++                    </CardHeader>
++                    <CardBody padding={4}>
++                        <FileUpload
++                            onFileDropTop={onTopFileDropHandler}
++                            onFileDropBottom={onBottomFileDropHandler}
++                        >
++                            <Flex direction={"column"} p={4} gap={4}>
++                                <Button leftIcon={<SettingsIcon/>} isDisabled={file === null || secondFile === null}
++                                        colorScheme="blue"
++                                        onClick={() => setIsModalOpen(true)}>
++                                    Map Excel Files
++                                </Button>
++                                <ExcelSettingsModal
++                                    isOpen={isModalOpen}
++                                    onClose={() => setIsModalOpen(false)}
++                                    downloadHeaders={downloadHeaders}
++                                    importHeaders={importHeaders}
++                                    onMappingConfirmed={handleMappingConfirmed}
++                                />
++
++                                <Button isDisabled={!unmatchedExcel} onClick={onUnmatchedExcelDownloadButtonClick}
++                                        leftIcon={<DownloadIcon/>}>
++                                    Download Unmatched Assets
++                                </Button>
++                                <Button isDisabled={!matchedExcel} onClick={onMatchedExcelDownloadButtonClick}
++                                        leftIcon={<DownloadIcon/>}>
++                                    Download Matched Assets
++                                </Button>
++                                <ConfirmationButton isDisabled={!unmatchedExcel || !matchedExcel}
++                                                    onConfirm={onAssetsUpdate} buttonText={
++                                    isUpdating ? publishingStatus : "Update Assets"
++                                } confirmationMessage={'testowa'}/>
++                                <Checkbox checked={publishAssets} onChange={(e) => setPublishAssets(e.target.checked)}>Publish
++                                    assets</Checkbox>
++                            </Flex>
++
++                        </FileUpload>
++                    </CardBody>
++                </Card>
++
++                <Button>Dropbox</Button>
++            </Flex>
++        </Box>
++    </>
++}
++
++export default InfinityIQ;
+Index: src/routes/Repositories.tsx
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.BaseRevisionTextPatchEP
+<+>import {\r\n  Box,\r\n  Card,\r\n  CardBody,\r\n  CardHeader,\r\n  Heading,\r\n  Input,\r\n  Skeleton,\r\n  Table,\r\n  TableContainer,\r\n  Tbody,\r\n  Td,\r\n  Text,\r\n  Tfoot,\r\n  Th,\r\n  Thead,\r\n  Tr,\r\n} from \"@chakra-ui/react\";\r\nimport { useCallback, useEffect, useMemo, useState } from \"react\";\r\nimport { useNavigate, useSearchParams } from \"react-router-dom\";\r\nimport withAuth from \"../hoc/withAuth\";\r\nimport { getAllRepos } from \"../services/repositories.service\";\r\nimport { RepositoryI } from \"../types/repositories\";\r\n\r\nexport const NEXT_ACTION_PARAM_NAME = \"nextAction\";\r\n\r\nexport enum NextAction {\r\n  ASSETS_IMPORT = \"/assets-import\",\r\n  REPOSITORY_EXPORT = \"/repository-export\",\r\n  GENERATE_DISTRIBUTOR_PAGES = \"/generate-distributor-pages\",\r\n}\r\n\r\n/**\r\n * Returns\r\n */\r\nconst nextActionRoute = (searchParams: URLSearchParams) => {\r\n  const nextAction = searchParams.get(NEXT_ACTION_PARAM_NAME);\r\n  console.log(\"DUB DUB\", nextAction);\r\n  if (nextAction === NextAction.GENERATE_DISTRIBUTOR_PAGES) {\r\n    return NextAction.GENERATE_DISTRIBUTOR_PAGES;\r\n  }\r\n\r\n  if (nextAction === NextAction.ASSETS_IMPORT) {\r\n    return NextAction.ASSETS_IMPORT;\r\n  }\r\n\r\n  return NextAction.REPOSITORY_EXPORT;\r\n};\r\n\r\nconst Repositories = () => {\r\n  const [searchParams] = useSearchParams();\r\n  const nextAction = useMemo(\r\n    () => nextActionRoute(searchParams),\r\n    [searchParams]\r\n  );\r\n\r\n  console.log(\"NEXT ACTION\", nextAction);\r\n\r\n  const [repositoryNameQuery, setRepositoryNameQuery] = useState(\"\");\r\n  const [repositoryIdQuery, setRepositoryIdQuery] = useState(\"\");\r\n  const [loadingRepositories, setLoadingRepositories] = useState(false);\r\n  const [repositories, setRepositories] = useState<RepositoryI[]>([]);\r\n  const navigate = useNavigate();\r\n\r\n  const getRepositories = useCallback(async () => {\r\n    setLoadingRepositories(true);\r\n    const reposRes = await getAllRepos();\r\n    setRepositories(reposRes);\r\n    setLoadingRepositories(false);\r\n  }, []);\r\n\r\n  useEffect(() => {\r\n    if (!loadingRepositories && repositories.length < 1) {\r\n      getRepositories();\r\n    }\r\n  }, [getRepositories, loadingRepositories, repositories.length]);\r\n\r\n  return (\r\n    <Box>\r\n      <Box padding={4}>\r\n        <Card>\r\n          <CardBody>\r\n            <Heading size=\"sm\" marginBottom={4}>\r\n              {nextAction === NextAction.GENERATE_DISTRIBUTOR_PAGES && <span>Generate distributor pages</span>}\r\n              {nextAction === NextAction.REPOSITORY_EXPORT && <span>Export repository</span>}\r\n            </Heading>\r\n            <Text> Choose the repository you want to work with</Text>\r\n          </CardBody>\r\n        </Card>\r\n      </Box>\r\n      <TableContainer opacity={loadingRepositories ? 0.5 : 1}>\r\n        <Table variant=\"simple\">\r\n          <Thead>\r\n            <Tr>\r\n              <Th isNumeric>#</Th>\r\n              <Th>Repository</Th>\r\n              <Th>ID</Th>\r\n            </Tr>\r\n            <Tr>\r\n              <Th>-</Th>\r\n              <Th>\r\n                <Input\r\n                  value={repositoryNameQuery}\r\n                  onChange={(e) => setRepositoryNameQuery(e.target.value)}\r\n                  placeholder=\"Repository name\"\r\n                  size=\"xs\"\r\n                />\r\n              </Th>\r\n              <Th>\r\n                <Input\r\n                  value={repositoryIdQuery}\r\n                  onChange={(e) => setRepositoryIdQuery(e.target.value)}\r\n                  placeholder=\"Repository id\"\r\n                  size=\"xs\"\r\n                />\r\n              </Th>\r\n            </Tr>\r\n          </Thead>\r\n          <Tbody>\r\n            {loadingRepositories && (\r\n              <Tr>\r\n                <Td>\r\n                  <Skeleton>1</Skeleton>\r\n                </Td>\r\n                <Td>\r\n                  <Skeleton>1</Skeleton>\r\n                </Td>\r\n                <Td>\r\n                  <Skeleton>1</Skeleton>\r\n                </Td>\r\n              </Tr>\r\n            )}\r\n\r\n            {repositories\r\n              .filter(\r\n                (repo) =>\r\n                  repo.name\r\n                    .toLowerCase()\r\n                    .includes(repositoryNameQuery.toLowerCase()) &&\r\n                  repo.id\r\n                    .toLowerCase()\r\n                    .includes(repositoryIdQuery.toLowerCase())\r\n              )\r\n              .map((repo, i) => {\r\n                return (\r\n                  <Tr\r\n                    key={i}\r\n                    cursor=\"pointer\"\r\n                    _hover={{\r\n                      color: \"blue.500\",\r\n                    }}\r\n                    onClick={() => {\r\n                      navigate({\r\n                        pathname: nextAction,\r\n                        search: `?id=${repo.id}&name=${repo.name}`,\r\n                      });\r\n                    }}\r\n                  >\r\n                    <Td>{i}</Td>\r\n                    <Td>{repo.name}</Td>\r\n                    <Td>{repo.id}</Td>\r\n                  </Tr>\r\n                );\r\n              })}\r\n          </Tbody>\r\n          <Tfoot>\r\n            <Tr>\r\n              <Th>#</Th>\r\n              <Th>Repository</Th>\r\n              <Th isNumeric>ID</Th>\r\n            </Tr>\r\n          </Tfoot>\r\n        </Table>\r\n      </TableContainer>\r\n    </Box>\r\n  );\r\n};\r\n\r\nexport default withAuth(Repositories);\r\n
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/src/routes/Repositories.tsx b/src/routes/Repositories.tsx
+--- a/src/routes/Repositories.tsx	(revision 068450b29696718f2ee70759ef2a5ca16aae762c)
++++ b/src/routes/Repositories.tsx	(date 1692875745012)
+@@ -28,6 +28,7 @@
+   ASSETS_IMPORT = "/assets-import",
+   REPOSITORY_EXPORT = "/repository-export",
+   GENERATE_DISTRIBUTOR_PAGES = "/generate-distributor-pages",
++  INFINITY_IQ = "/infinity-iq",
+ }
+ 
+ /**
+@@ -35,7 +36,6 @@
+  */
+ const nextActionRoute = (searchParams: URLSearchParams) => {
+   const nextAction = searchParams.get(NEXT_ACTION_PARAM_NAME);
+-  console.log("DUB DUB", nextAction);
+   if (nextAction === NextAction.GENERATE_DISTRIBUTOR_PAGES) {
+     return NextAction.GENERATE_DISTRIBUTOR_PAGES;
+   }
+@@ -44,6 +44,11 @@
+     return NextAction.ASSETS_IMPORT;
+   }
+ 
++  if (nextAction === NextAction.INFINITY_IQ) {
++    return NextAction.INFINITY_IQ;
++  }
++
++  console.log("Next action undefined. You will be redirected to repository export")
+   return NextAction.REPOSITORY_EXPORT;
+ };
+ 
+Index: src/routes/RepositoryExport.tsx
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.BaseRevisionTextPatchEP
+<+>import {\r\n  ArrowRightIcon,\r\n  DownloadIcon,\r\n  ExternalLinkIcon,\r\n  QuestionIcon,\r\n} from \"@chakra-ui/icons\";\r\nimport {\r\n  Alert,\r\n  AlertDescription,\r\n  AlertIcon,\r\n  AlertTitle,\r\n  Box,\r\n  Button,\r\n  Card,\r\n  CardBody,\r\n  Checkbox,\r\n  Flex,\r\n  Heading,\r\n  Select,\r\n  Skeleton,\r\n  Stack,\r\n  StackDivider,\r\n  Table,\r\n  Tbody,\r\n  Td,\r\n  Text,\r\n  Th,\r\n  Thead,\r\n  Tooltip,\r\n  Tr,\r\n  useToast,\r\n} from \"@chakra-ui/react\";\r\nimport { useCallback, useEffect, useReducer, useState } from \"react\";\r\nimport { Link, useSearchParams } from \"react-router-dom\";\r\nimport { z } from \"zod\";\r\nimport {\r\n  fetchAllItemsOfTypeFromRepositoryIdScroll,\r\n  fetchItemByID,\r\n  getReferencedByForAsset,\r\n} from \"../services/assets.service\";\r\nimport {\r\n  mapImagesDataForExcel,\r\n  mapPagesDataForExcel,\r\n} from \"../services/excel.service\";\r\nimport { saveJSONToExcelFile } from \"../services/files.service\";\r\nimport {\r\n  getSites,\r\n  getSiteVanityDomain,\r\n  getStructureJSON,\r\n  SiteI,\r\n} from \"../services/sites.service\";\r\nimport { getAllTypes } from \"../services/types.service\";\r\nimport { ItemI } from \"../types/repositories\";\r\nimport { AssetTypeI } from \"../types/types\";\r\n\r\ninterface LoadingStates {\r\n  pages: boolean;\r\n  images: boolean;\r\n  types: boolean;\r\n}\r\n\r\nconst server = localStorage.getItem(\"server\")?.toLowerCase();\r\n\r\nconst RepositoryExport = () => {\r\n  const [assetsWithTooLongFieldValue, setAssetsWithTooLongFieldValue] =\r\n    useState<\r\n      {\r\n        id?: string;\r\n        name?: string;\r\n        fieldName?: string;\r\n        [key: string]: any;\r\n      }[]\r\n    >([]);\r\n  const [imageProgress, setImageProgress] = useState(\"\");\r\n  const [pagesProgress, setPagesProgress] = useState(\"\");\r\n  const [loadingStates, setLoading] = useReducer(\r\n    (state: LoadingStates, newState: Partial<LoadingStates>) => ({\r\n      ...state,\r\n      ...newState,\r\n    }),\r\n    {\r\n      pages: false,\r\n      images: false,\r\n      types: false,\r\n    }\r\n  );\r\n\r\n  const [availableAssetTypes, setAvailableAssetTypes] = useState<AssetTypeI[]>(\r\n    []\r\n  );\r\n  const [searchParams] = useSearchParams();\r\n  const repositoryId = searchParams.get(\"id\");\r\n  const repositoryName = searchParams.get(\"name\");\r\n  const [assets, setAssets] = useState<ItemI[]>([]);\r\n  const [shouldGenerateURLs, setShouldGenerateURLs] = useState(false);\r\n  const [sites, setSites] = useState<SiteI[]>([]);\r\n  const [activeSite, setActiveSite] = useState<SiteI>();\r\n  const toast = useToast();\r\n  const [includeTeaserData, setIncludeTeaserData] = useState(false);\r\n  const [includeReferencedBy, setIncludeReferencedBy] = useState(false);\r\n  const [simultaneousRequests, setSimultaneousRequests] = useState(15);\r\n  const [excludeUnused, setExludeUnused] = useState(false);\r\n\r\n  const downloadImages = async () => {\r\n    const imageTypesOnly = availableAssetTypes.filter((assetType: AssetTypeI) =>\r\n      assetType.name.toLowerCase().includes(\"image\")\r\n    );\r\n\r\n    setLoading({\r\n      images: true,\r\n    });\r\n\r\n    try {\r\n      await downloadExcel(imageTypesOnly, `images-${repositoryName}`, \"images\");\r\n    } catch (err) {\r\n      toast({\r\n        title: \"Error\",\r\n        description: \"Could not fetch pages\",\r\n        status: \"error\",\r\n        duration: 9000,\r\n        isClosable: true,\r\n      });\r\n    }\r\n\r\n    setLoading({\r\n      images: false,\r\n    });\r\n  };\r\n\r\n  const downloadPages = async () => {\r\n    const pagesTypesOnly = availableAssetTypes.filter((assetType: AssetTypeI) =>\r\n      assetType.name.toLowerCase().includes(\"page\")\r\n    );\r\n    setLoading({\r\n      pages: true,\r\n    });\r\n    try {\r\n      await downloadExcel(pagesTypesOnly, `pages-${repositoryName}`);\r\n    } catch (err) {\r\n      toast({\r\n        title: \"Error\",\r\n        description:\r\n          \"There was an error during Excel generation. Open console log (F12) to see more info.\",\r\n        status: \"error\",\r\n        duration: 9000,\r\n        isClosable: true,\r\n      });\r\n    }\r\n\r\n    setLoading({\r\n      pages: false,\r\n    });\r\n  };\r\n\r\n  const getPagesDataForExcel = async (assetsToDownload: AssetTypeI[]) => {\r\n    if (!repositoryId || !repositoryName || !activeSite) {\r\n      return;\r\n    }\r\n\r\n    const typesNamesToDownload = assetsToDownload.map((type) => type.name);\r\n\r\n    const assetsRes = await fetchAllItemsOfTypeFromRepositoryIdScroll(\r\n      repositoryId,\r\n      availableAssetTypes\r\n        .filter((type) => typesNamesToDownload.includes(type.name))\r\n        .map((type) => type.name),\r\n      setPagesProgress\r\n    );\r\n\r\n    const siteVanityDomain = await getSiteVanityDomain(\r\n      activeSite?.id,\r\n      activeSite?.name\r\n    );\r\n\r\n    const structurePages = await getStructureJSON(siteVanityDomain);\r\n    if (structurePages.length < 1) {\r\n      toast({\r\n        title: \"Warning\",\r\n        description:\r\n          \"Could not fetch the structure (probableUrl will not be generated). Was the site published?\",\r\n        status: \"warning\",\r\n        duration: null,\r\n        isClosable: true,\r\n      });\r\n    }\r\n\r\n    const mappedPages = mapPagesDataForExcel(assetsRes, repositoryName, {\r\n      structurePages,\r\n      baseURL: siteVanityDomain,\r\n    });\r\n\r\n    if (includeTeaserData) {\r\n      let mappedPagesWithTeaserMedia = [];\r\n      for (const page of mappedPages) {\r\n        if (!page.teaser_media_id) {\r\n          mappedPagesWithTeaserMedia.push(page);\r\n          continue;\r\n        }\r\n\r\n        setPagesProgress(`Teaser - Page ${page.name}`);\r\n        const teaserMedia = await fetchItemByID(page.teaser_media_id);\r\n        if (teaserMedia?.name) {\r\n          mappedPagesWithTeaserMedia.push({\r\n            ...page,\r\n            teaser_media_name: teaserMedia.name,\r\n          });\r\n          continue;\r\n        }\r\n\r\n        mappedPagesWithTeaserMedia.push(page);\r\n      }\r\n\r\n      return mappedPagesWithTeaserMedia;\r\n    }\r\n\r\n    return mappedPages;\r\n  };\r\n\r\n  type ArrayElementType<T> = T extends Array<infer U> ? U : never;\r\n\r\n  const downloadExcel = async (\r\n    assetsToDownload: AssetTypeI[],\r\n    fileName: string,\r\n    dataType: \"pages\" | \"images\" = \"pages\"\r\n  ) => {\r\n    setAssetsWithTooLongFieldValue([]);\r\n    setPagesProgress(\"\");\r\n    setImageProgress(\"\");\r\n\r\n    if (!repositoryId || !repositoryName || !activeSite) {\r\n      return;\r\n    }\r\n\r\n    if (dataType === \"pages\") {\r\n      const pagesData = await getPagesDataForExcel(assetsToDownload);\r\n      setPagesProgress(\"\");\r\n      // create a const of type one item from pagesData, not array\r\n\r\n      const pagesWithTooLongField: (\r\n        | ArrayElementType<typeof pagesData>\r\n        | { fieldName: string }\r\n      )[] = [];\r\n      let alerted = false;\r\n      const filteredPagesData = pagesData?.filter((page) => {\r\n        const pageHasTooLongField = Object.keys(page).some((key) => {\r\n          const value = (page as any)[key];\r\n          if (typeof value === \"string\" && value.length > 32767) {\r\n            if (!alerted) {\r\n              toast({\r\n                title: \"Warning\",\r\n                description: `Some pages have fields with more than 32767 characters. They will be not included in the Excel file.`,\r\n                status: \"warning\",\r\n                duration: null,\r\n                isClosable: true,\r\n              });\r\n            }\r\n            alerted = true;\r\n            pagesWithTooLongField.push({ ...page, fieldName: key });\r\n            return true;\r\n          }\r\n          return false;\r\n        });\r\n        setAssetsWithTooLongFieldValue(pagesWithTooLongField);\r\n        return !pageHasTooLongField;\r\n      });\r\n\r\n      return saveJSONToExcelFile(filteredPagesData, `${fileName}.xlsx`);\r\n    }\r\n\r\n    const typesNamesToDownload = assetsToDownload.map((type) => type.name);\r\n    const assetsRes = await fetchAllItemsOfTypeFromRepositoryIdScroll(\r\n      repositoryId,\r\n      availableAssetTypes\r\n        .filter((type) => typesNamesToDownload.includes(type.name))\r\n        .map((type) => type.name),\r\n      setImageProgress\r\n    );\r\n\r\n    if (!assetsRes) {\r\n      throw new Error(\"No assets\");\r\n    }\r\n    console.log(\"IMAGES\", assetsRes);\r\n\r\n    const isImagesRequest = typesNamesToDownload.find((typeName) =>\r\n      typeName.toLowerCase().includes(\"image\")\r\n    );\r\n\r\n    if (isImagesRequest) {\r\n      const preparedAssets = mapImagesDataForExcel(assetsRes, repositoryName);\r\n\r\n      if (includeReferencedBy) {\r\n        const referencedByData = await getReferencedBy(\r\n          preparedAssets,\r\n          setImageProgress,\r\n          simultaneousRequests\r\n        );\r\n\r\n        console.log(\"REFERENCED BY DATA\", referencedByData);\r\n\r\n        const mappedPreparedAssets = referencedByData.flatMap((asset) => {\r\n          const assetInPreparedAssets = preparedAssets.find(\r\n            (a) => a.id === asset.id\r\n          );\r\n\r\n          return asset.referencedBy.map((referencedBy) => {\r\n            \r\n\r\n            return referencedBy.fields ?  {\r\n              ...assetInPreparedAssets,\r\n              referenced_by_id: referencedBy.id,\r\n              referenced_by_name: referencedBy.name,\r\n              referenced_by_language: referencedBy.language,\r\n              referenced_by_type: referencedBy.type,\r\n              referenced_by_meta_title: referencedBy.fields.metaTitle,\r\n              referenced_by_page_title: referencedBy.fields.pageTitle,\r\n              referenced_by_descriptions: referencedBy.fields.descriptions,\r\n            } : {\r\n              ...assetInPreparedAssets,\r\n              referenced_by_id: referencedBy.id,\r\n              referenced_by_name: referencedBy.name,\r\n              referenced_by_language: referencedBy.language,\r\n              referenced_by_type: referencedBy.type,\r\n            };\r\n          });\r\n        });\r\n\r\n        const preparedAssetsWithoutReferencedBy = preparedAssets.filter(\r\n          (asset) =>\r\n            mappedPreparedAssets.find((a) => a.id === asset.id) === undefined\r\n        );\r\n        const combined = [\r\n          ...preparedAssetsWithoutReferencedBy,\r\n          ...mappedPreparedAssets,\r\n        ];\r\n\r\n        console.log(\"COMBINED: \", combined);\r\n        setImageProgress(\"\");\r\n        return saveJSONToExcelFile(\r\n          excludeUnused ? mappedPreparedAssets : combined,\r\n          `${fileName}.xlsx`\r\n        );\r\n      }\r\n\r\n      setImageProgress(\"\");\r\n      return saveJSONToExcelFile(preparedAssets, `${fileName}.xlsx`);\r\n    }\r\n\r\n    // Not images request\r\n    const siteVanityDomain = await getSiteVanityDomain(\r\n      activeSite?.id,\r\n      activeSite?.name\r\n    );\r\n    const structurePages = await getStructureJSON(siteVanityDomain).catch(\r\n      (_err) => {\r\n        return [];\r\n      }\r\n    );\r\n\r\n    if (structurePages.length < 1) {\r\n      toast({\r\n        title: \"Warning\",\r\n        description:\r\n          \"Could not fetch the structure (probableUrl will not be generated). Was the site published?\",\r\n        status: \"warning\",\r\n\r\n        isClosable: true,\r\n      });\r\n    }\r\n\r\n    const preparedAssets = mapPagesDataForExcel(assetsRes, repositoryName, {\r\n      structurePages,\r\n      baseURL: siteVanityDomain,\r\n    });\r\n    return saveJSONToExcelFile(preparedAssets, `${fileName}.xlsx`);\r\n  };\r\n\r\n  const getAvailableAssetTypesAndSites = useCallback(async () => {\r\n    setLoading({\r\n      types: true,\r\n    });\r\n    if (availableAssetTypes.length > 0) {\r\n      setLoading({\r\n        types: false,\r\n      });\r\n      return;\r\n    }\r\n    const sites = await getSites();\r\n    const assetTypesRes = await getAllTypes();\r\n    if (!assetTypesRes) {\r\n      toast({\r\n        title: \"Error\",\r\n        description: \"Could not fetch asset types\",\r\n        status: \"error\",\r\n        duration: 9000,\r\n        isClosable: true,\r\n      });\r\n\r\n      setLoading({\r\n        types: false,\r\n      });\r\n      return;\r\n    }\r\n\r\n    if (!sites) {\r\n      toast({\r\n        title: \"Error\",\r\n        description: \"Could not fetch sites\",\r\n        status: \"error\",\r\n        duration: 9000,\r\n        isClosable: true,\r\n      });\r\n\r\n      setLoading({\r\n        types: false,\r\n      });\r\n      return;\r\n    }\r\n    setSites(sites.items);\r\n    if (repositoryName) {\r\n      const foundSite = sites.items.find((site) =>\r\n        repositoryName.toLowerCase().includes(site.name.toLowerCase())\r\n      );\r\n      setActiveSite(foundSite);\r\n    }\r\n\r\n    console.log(sites);\r\n    setAvailableAssetTypes(assetTypesRes);\r\n    \r\n    setLoading({\r\n      types: false,\r\n    });\r\n  }, [availableAssetTypes.length, toast]);\r\n\r\n  useEffect(() => {\r\n    if (!loadingStates.types || availableAssetTypes.length < 1) {\r\n      getAvailableAssetTypesAndSites();\r\n    }\r\n  }, [\r\n    getAvailableAssetTypesAndSites,\r\n    availableAssetTypes.length,\r\n    loadingStates.types,\r\n  ]);\r\n\r\n  return (\r\n    <Box padding={4} maxW={800} margin=\"auto\">\r\n      <Heading size=\"md\" marginBottom={4}>\r\n        Repository: {repositoryName}\r\n      </Heading>\r\n      <Card variant=\"outline\">\r\n        <CardBody>\r\n          <Stack divider={<StackDivider />} spacing=\"4\">\r\n            <Box>\r\n              <Heading size=\"xs\" textTransform=\"uppercase\">\r\n                Page-related assets\r\n              </Heading>\r\n              <Skeleton isLoaded={!loadingStates.types}>\r\n                <Text pt=\"2\" fontSize=\"sm\" color=\"gray\">\r\n                  All assets of type:{\" \"}\r\n                  {availableAssetTypes\r\n                    .filter((assetType: AssetTypeI) =>\r\n                      assetType.name.toLowerCase().includes(\"page\")\r\n                    )\r\n                    .map((availableType) => availableType.name)\r\n                    .join(\", \")}\r\n                </Text>\r\n              </Skeleton>\r\n\r\n              <Flex\r\n                direction=\"row\"\r\n                alignItems=\"center\"\r\n                gap={4}\r\n                marginTop={4}\r\n                flexDirection={{\r\n                  base: \"column\",\r\n                  md: \"row\",\r\n                }}\r\n              >\r\n                <Button\r\n                  leftIcon={<DownloadIcon />}\r\n                  isDisabled={loadingStates.types}\r\n                  onClick={downloadPages}\r\n                  isLoading={loadingStates.pages}\r\n                  loadingText={pagesProgress}\r\n                >\r\n                  Download Pages\r\n                </Button>\r\n\r\n                <Button\r\n                  gap={4}\r\n                  variant=\"outline\"\r\n                  disabled={loadingStates.pages}\r\n                >\r\n                  <Checkbox\r\n                    isChecked={includeTeaserData}\r\n                    onChange={(e) => setIncludeTeaserData(e.target.checked)}\r\n                  />{\" \"}\r\n                  Include teaser data\r\n                </Button>\r\n\r\n                <Skeleton isLoaded={sites.length > 0}>\r\n                  <Select\r\n                    placeholder=\"Select website\"\r\n                    maxW={200}\r\n                    disabled={loadingStates.pages}\r\n                    value={activeSite?.id}\r\n                    onChange={(e) =>\r\n                      setActiveSite(\r\n                        sites.find((site) => site.id === e.target.value)\r\n                      )\r\n                    }\r\n                  >\r\n                    {sites\r\n                      .sort((a, b) => {\r\n                        // sort alphabetically\r\n                        if (a.name < b.name) {\r\n                          return -1;\r\n                        }\r\n                        if (a.name > b.name) {\r\n                          return 1;\r\n                        }\r\n\r\n                        return 0;\r\n                      })\r\n                      .map((site) => (\r\n                        <option key={site.id} value={site.id}>\r\n                          {site.name}\r\n                        </option>\r\n                      ))}\r\n                  </Select>\r\n                </Skeleton>\r\n\r\n                <Tooltip label=\"Select website if it was detected incorrectly.\">\r\n                  <QuestionIcon />\r\n                </Tooltip>\r\n              </Flex>\r\n            </Box>\r\n            <Box>\r\n              <Heading size=\"xs\" textTransform=\"uppercase\">\r\n                Image assets\r\n              </Heading>\r\n              <Skeleton isLoaded={!loadingStates.types}>\r\n                <Text pt=\"2\" fontSize=\"sm\" color=\"gray\">\r\n                  All assets of type:{\" \"}\r\n                  {availableAssetTypes\r\n                    .filter((assetType: AssetTypeI) =>\r\n                      assetType.name.toLowerCase().includes(\"image\")\r\n                    )\r\n                    .map((availableType) => availableType.name)\r\n                    .join(\", \")}\r\n                </Text>\r\n              </Skeleton>\r\n              <Flex\r\n                alignItems=\"center\"\r\n                gap={4}\r\n                marginTop={4}\r\n                flexDirection={{\r\n                  base: \"column\",\r\n                  md: \"row\",\r\n                }}\r\n              >\r\n                <Button\r\n                  leftIcon={<DownloadIcon />}\r\n                  isDisabled={loadingStates.types}\r\n                  onClick={downloadImages}\r\n                  isLoading={loadingStates.images}\r\n                  loadingText={imageProgress}\r\n                  width={{\r\n                    base: \"100%\",\r\n                    md: \"auto\",\r\n                  }}\r\n                >\r\n                  Download Images\r\n                </Button>\r\n                <Button\r\n                  gap={4}\r\n                  variant=\"outline\"\r\n                  isDisabled={loadingStates.types || loadingStates.images}\r\n                  width={{\r\n                    base: \"100%\",\r\n                    md: \"auto\",\r\n                  }}\r\n                >\r\n                  <Checkbox\r\n                    isChecked={includeReferencedBy}\r\n                    onChange={(e) => setIncludeReferencedBy(e.target.checked)}\r\n                  />\r\n                  <div>\r\n                    Include <i>referenced by</i>\r\n                  </div>\r\n                </Button>\r\n                <Button\r\n                  width={{\r\n                    base: \"100%\",\r\n                    md: \"auto\",\r\n                  }}\r\n                  gap={4}\r\n                  variant=\"outline\"\r\n                  isDisabled={\r\n                    loadingStates.types ||\r\n                    loadingStates.images ||\r\n                    !includeReferencedBy\r\n                  }\r\n                >\r\n                  <Checkbox\r\n                    isChecked={excludeUnused}\r\n                    onChange={(e) => setExludeUnused(e.target.checked)}\r\n                  />\r\n                  <div>Exclude unused</div>\r\n                </Button>\r\n                <Select\r\n                  width={{\r\n                    base: \"100%\",\r\n                    md: \"auto\",\r\n                  }}\r\n                  isDisabled={loadingStates.types || !includeReferencedBy}\r\n                  maxW={85}\r\n                  value={simultaneousRequests}\r\n                  onChange={(e) =>\r\n                    setSimultaneousRequests(Number(e.target.value))\r\n                  }\r\n                >\r\n                  <option value={1}>1</option>\r\n                  <option value={5}>5</option>\r\n                  <option value={10}>10</option>\r\n                  <option value={15}>15</option>\r\n                  <option value={20}>20</option>\r\n                  <option value={25}>25</option>\r\n                  <option value={30}>30</option>\r\n                  <option value={50}>50</option>\r\n                  <option value={100}>100</option>\r\n                  <option value={150}>150</option>\r\n                  <option value={300}>300</option>\r\n                </Select>\r\n                <Tooltip label=\"Change the number of simultaneous requests (referenced by).\">\r\n                  <QuestionIcon />\r\n                </Tooltip>\r\n              </Flex>\r\n            </Box>\r\n          </Stack>\r\n        </CardBody>\r\n      </Card>\r\n\r\n      {assetsWithTooLongFieldValue.length > 0 && (\r\n        <Box marginTop={4}>\r\n          <Alert status=\"warning\">\r\n            <AlertIcon />\r\n            <AlertTitle mr={2}>\r\n              Some assets have too long field values\r\n            </AlertTitle>\r\n            <AlertDescription>\r\n              <Text fontSize=\"sm\">\r\n                Some assets have too long field values and cannot be exported.\r\n                Please check the following assets:\r\n              </Text>\r\n            </AlertDescription>\r\n          </Alert>\r\n          <Table border=\"2px solid\" marginTop={4} borderColor=\"orange.300\">\r\n            <Thead>\r\n              <Tr>\r\n                <Th>Asset name</Th>\r\n                <Th>ID</Th>\r\n                <Th>Field name</Th>\r\n              </Tr>\r\n            </Thead>\r\n            <Tbody>\r\n              {assetsWithTooLongFieldValue.map((asset) => {\r\n                const assetUrl = `https://${server}-iroraclecloud.cec.ocp.oraclecloud.com/documents/assets?q=%7B%22keywords%22%3A%5B%22${asset.id}%22%5D%2C%22repositoryId%22%3A%22${repositoryId}%22%7D`;\r\n\r\n                return (\r\n                  <Tr key={asset.id}>\r\n                    <Td>\r\n                      <Link to={assetUrl} target=\"_blank\">\r\n                        {asset.name} <ExternalLinkIcon />\r\n                      </Link>\r\n                    </Td>\r\n\r\n                    <Td>{asset.id}</Td>\r\n                    <Td>{asset.fieldName}</Td>\r\n                  </Tr>\r\n                );\r\n              })}\r\n            </Tbody>\r\n          </Table>\r\n        </Box>\r\n      )}\r\n\r\n      <Button\r\n        size=\"sm\"\r\n        variant=\"outline\"\r\n        float=\"right\"\r\n        marginTop={4}\r\n        leftIcon={<ArrowRightIcon w={2} h={2} />}\r\n      >\r\n        <Link to=\"/assets-import\">Assets Import</Link>\r\n      </Button>\r\n    </Box>\r\n  );\r\n};\r\n\r\nconst ReferencedBySchema = z.array(\r\n  z\r\n    .object({\r\n      id: z.string(),\r\n      relationships: z\r\n        .object({\r\n          data: z\r\n            .object({\r\n              referencedBy: z.array(\r\n                z\r\n                  .object({\r\n                    id: z.string(),\r\n                  })\r\n                  .passthrough()\r\n              ),\r\n            })\r\n            .passthrough(),\r\n        })\r\n        .passthrough(),\r\n    })\r\n    .passthrough()\r\n);\r\n\r\nconst getReferencedBy = async (\r\n  preparedAssets: ReturnType<typeof mapImagesDataForExcel>,\r\n  setImageProgress: (progressStr: string) => void,\r\n  numberOfSimultaneousRequests = 5\r\n) => {\r\n  let requests = [];\r\n  let completedRequests = 0;\r\n  let totalAssets = preparedAssets.length;\r\n  let results: ReturnType<(typeof ReferencedBySchema)[\"parse\"]> = [];\r\n  let count = 0;\r\n  setImageProgress(`Referenced by: ${completedRequests}/${totalAssets}`);\r\n\r\n  for (const asset of preparedAssets) {\r\n    count = count + 1;\r\n    requests.push(getReferencedByForAsset(asset.id));\r\n\r\n    if (requests.length === numberOfSimultaneousRequests) {\r\n      let responses = await Promise.all(requests);\r\n      const reponsesParsed = ReferencedBySchema.parse(responses);\r\n      results = results.concat(reponsesParsed);\r\n      completedRequests += requests.length;\r\n      setImageProgress(`Referenced by: ${completedRequests}/${totalAssets}`);\r\n      requests = [];\r\n    }\r\n  }\r\n\r\n  // handle any remaining requests\r\n  if (requests.length > 0) {\r\n    let responses = await Promise.all(requests);\r\n    const reponsesParsed = ReferencedBySchema.parse(responses);\r\n    results = results.concat(reponsesParsed);\r\n    completedRequests += requests.length;\r\n    setImageProgress(`${completedRequests}/${totalAssets}`);\r\n  }\r\n\r\n  // RESULTS\r\n\r\n  const expandedReferences = await expandReferences(\r\n    results,\r\n    setImageProgress,\r\n    numberOfSimultaneousRequests\r\n  );\r\n\r\n  return expandedReferences;\r\n};\r\n\r\nconst expandReferences = async (\r\n  assets: ReturnType<(typeof ReferencedBySchema)[\"parse\"]>,\r\n  setProgress: (progressStr: string) => void,\r\n  numberOfSimultaneousRequests = 5\r\n) => {\r\n  // use fetchItemByID to get the full asset data, use numberOfSimultaneousRequests to set the number of simultaneous requests\r\n  const ResponseSchema = z.array(\r\n    z\r\n      .object({\r\n        id: z.string(),\r\n        name: z.string(),\r\n        language: z.string(),\r\n        type: z.string(),\r\n        fields: z.any()\r\n      })\r\n      .passthrough()\r\n  );\r\n\r\n  let requests = [];\r\n  let completedRequests = 0;\r\n  let results: ReturnType<(typeof ResponseSchema)[\"parse\"]> = [];\r\n\r\n  const allReferencedAssetsIds = assets.flatMap((asset) =>\r\n    asset.relationships.data.referencedBy.map(\r\n      (referencedAsset) => referencedAsset.id\r\n    )\r\n  );\r\n\r\n  const uniqueReferencedAssetsIds = [...new Set(allReferencedAssetsIds)];\r\n  let totalAssets = uniqueReferencedAssetsIds.length;\r\n  setProgress(`Expanding references: ${completedRequests}/${totalAssets}`);\r\n\r\n  for (const referencedAssetId of uniqueReferencedAssetsIds) {\r\n    requests.push(fetchItemByID(referencedAssetId));\r\n\r\n    if (requests.length === numberOfSimultaneousRequests) {\r\n      let responses = await Promise.all(requests);\r\n      const reponsesParsed = ResponseSchema.parse(responses);\r\n      results = results.concat(reponsesParsed);\r\n      completedRequests += requests.length;\r\n      setProgress(`Expanding references: ${completedRequests}/${totalAssets}`);\r\n      requests = [];\r\n    }\r\n  }\r\n\r\n  // handle any remaining requests\r\n  if (requests.length > 0) {\r\n    let responses = await Promise.all(requests);\r\n    const reponsesParsed = ResponseSchema.parse(responses);\r\n    results = results.concat(reponsesParsed);\r\n    completedRequests += requests.length;\r\n    setProgress(`Expanding references: ${completedRequests}/${totalAssets}`);\r\n  }\r\n\r\n  // RESULTS\r\n\r\n  const mappedData = assets.map((asset) => {\r\n    const referencedBy = asset.relationships.data.referencedBy.map(\r\n      (referencedAsset) => {\r\n        const foundAsset = results.find(\r\n          (result) => result.id === referencedAsset.id\r\n        );\r\n\r\n        return {\r\n          id: foundAsset?.id,\r\n          name: foundAsset?.name,\r\n          language: foundAsset?.language,\r\n          type: foundAsset?.type,\r\n          fields: (foundAsset?.fields?.meta_title || foundAsset?.fields?.descriptions || foundAsset?.fields?.page_title) ? {\r\n            metaTitle: foundAsset?.fields?.meta_title,\r\n            descriptions: foundAsset?.fields?.descriptions,\r\n            pageTitle: foundAsset?.fields?.page_title\r\n          } : undefined\r\n        };\r\n      }\r\n    );\r\n\r\n    return {\r\n      id: asset.id,\r\n      name: asset.name || \"N/A\",\r\n      referencedBy,\r\n    };\r\n  });\r\n\r\n  return mappedData;\r\n};\r\n\r\nexport default RepositoryExport;\r\n
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/src/routes/RepositoryExport.tsx b/src/routes/RepositoryExport.tsx
+--- a/src/routes/RepositoryExport.tsx	(revision 068450b29696718f2ee70759ef2a5ca16aae762c)
++++ b/src/routes/RepositoryExport.tsx	(date 1692888594439)
+@@ -303,7 +303,7 @@
+           );
+ 
+           return asset.referencedBy.map((referencedBy) => {
+-            
++
+ 
+             return referencedBy.fields ?  {
+               ...assetInPreparedAssets,
+@@ -425,7 +425,7 @@
+ 
+     console.log(sites);
+     setAvailableAssetTypes(assetTypesRes);
+-    
++
+     setLoading({
+       types: false,
+     });
+Index: package.json
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.BaseRevisionTextPatchEP
+<+>{\r\n  \"name\": \"ocm-app\",\r\n  \"version\": \"0.1.0\",\r\n  \"private\": true,\r\n  \"homepage\": \".\",\r\n  \"dependencies\": {\r\n    \"@chakra-ui/icons\": \"^2.0.17\",\r\n    \"@chakra-ui/react\": \"^2.4.9\",\r\n    \"@emotion/react\": \"^11.10.5\",\r\n    \"@emotion/styled\": \"^11.10.5\",\r\n    \"@testing-library/jest-dom\": \"^5.16.5\",\r\n    \"@testing-library/react\": \"^13.4.0\",\r\n    \"@testing-library/user-event\": \"^13.5.0\",\r\n    \"@types/jest\": \"^27.5.2\",\r\n    \"@types/node\": \"^16.18.11\",\r\n    \"@types/react\": \"^18.0.27\",\r\n    \"@types/react-dom\": \"^18.0.10\",\r\n    \"axios\": \"^1.2.5\",\r\n    \"buffer\": \"^6.0.3\",\r\n    \"framer-motion\": \"^8.5.3\",\r\n    \"react\": \"^18.2.0\",\r\n    \"react-dom\": \"^18.2.0\",\r\n    \"react-dropzone\": \"^14.2.3\",\r\n    \"react-router-dom\": \"^6.8.0\",\r\n    \"react-scripts\": \"5.0.1\",\r\n    \"typescript\": \"^4.9.4\",\r\n    \"web-vitals\": \"^2.1.4\",\r\n    \"xlsx\": \"^0.18.5\",\r\n    \"zod\": \"^3.21.4\"\r\n  },\r\n  \"scripts\": {\r\n    \"dev\": \"react-scripts start\",\r\n    \"start\": \"react-scripts start\",\r\n    \"build\": \"react-scripts build\",\r\n    \"test\": \"react-scripts test\",\r\n    \"eject\": \"react-scripts eject\"\r\n  },\r\n  \"eslintConfig\": {\r\n    \"extends\": [\r\n      \"react-app\",\r\n      \"react-app/jest\"\r\n    ]\r\n  },\r\n  \"browserslist\": {\r\n    \"production\": [\r\n      \">0.2%\",\r\n      \"not dead\",\r\n      \"not op_mini all\"\r\n    ],\r\n    \"development\": [\r\n      \"last 1 chrome version\",\r\n      \"last 1 firefox version\",\r\n      \"last 1 safari version\"\r\n    ]\r\n  }\r\n}\r\n
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/package.json b/package.json
+--- a/package.json	(revision 068450b29696718f2ee70759ef2a5ca16aae762c)
++++ b/package.json	(date 1692996268125)
+@@ -15,9 +15,12 @@
+     "@types/node": "^16.18.11",
+     "@types/react": "^18.0.27",
+     "@types/react-dom": "^18.0.10",
++    "@types/xlsx": "^0.0.36",
+     "axios": "^1.2.5",
+     "buffer": "^6.0.3",
++    "dropbox": "^10.34.0",
+     "framer-motion": "^8.5.3",
++    "fuse.js": "^6.6.2",
+     "react": "^18.2.0",
+     "react-dom": "^18.2.0",
+     "react-dropzone": "^14.2.3",
+Index: package-lock.json
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/package-lock.json b/package-lock.json
+--- a/package-lock.json	(revision 068450b29696718f2ee70759ef2a5ca16aae762c)
++++ b/package-lock.json	(date 1692996678976)
+@@ -19,9 +19,12 @@
+         "@types/node": "^16.18.11",
+         "@types/react": "^18.0.27",
+         "@types/react-dom": "^18.0.10",
++        "@types/xlsx": "^0.0.36",
+         "axios": "^1.2.5",
+         "buffer": "^6.0.3",
++        "dropbox": "^10.34.0",
+         "framer-motion": "^8.5.3",
++        "fuse.js": "^6.6.2",
+         "react": "^18.2.0",
+         "react-dom": "^18.2.0",
+         "react-dropzone": "^14.2.3",
+@@ -5192,6 +5195,16 @@
+       "resolved": "https://registry.npmjs.org/@types/node/-/node-16.18.11.tgz",
+       "integrity": "sha512-3oJbGBUWuS6ahSnEq1eN2XrCyf4YsWI8OyCvo7c64zQJNplk3mO84t53o8lfTk+2ji59g5ycfc6qQ3fdHliHuA=="
+     },
++    "node_modules/@types/node-fetch": {
++      "version": "2.6.4",
++      "resolved": "https://registry.npmjs.org/@types/node-fetch/-/node-fetch-2.6.4.tgz",
++      "integrity": "sha512-1ZX9fcN4Rvkvgv4E6PAY5WXUFWFcRWxZa3EW83UjycOB9ljJCedb2CupIP4RZMEwF/M3eTcCihbBRgwtGbg5Rg==",
++      "peer": true,
++      "dependencies": {
++        "@types/node": "*",
++        "form-data": "^3.0.0"
++      }
++    },
+     "node_modules/@types/parse-json": {
+       "version": "4.0.0",
+       "resolved": "https://registry.npmjs.org/@types/parse-json/-/parse-json-4.0.0.tgz",
+@@ -5314,6 +5327,15 @@
+         "@types/node": "*"
+       }
+     },
++    "node_modules/@types/xlsx": {
++      "version": "0.0.36",
++      "resolved": "https://registry.npmjs.org/@types/xlsx/-/xlsx-0.0.36.tgz",
++      "integrity": "sha512-mvfrKiKKMErQzLMF8ElYEH21qxWCZtN59pHhWGmWCWFJStYdMWjkDSAy6mGowFxHXaXZWe5/TW7pBUiWclIVOw==",
++      "deprecated": "This is a stub types definition for xlsx (https://github.com/sheetjs/js-xlsx). xlsx provides its own type definitions, so you don't need @types/xlsx installed!",
++      "dependencies": {
++        "xlsx": "*"
++      }
++    },
+     "node_modules/@types/yargs": {
+       "version": "16.0.5",
+       "resolved": "https://registry.npmjs.org/@types/yargs/-/yargs-16.0.5.tgz",
+@@ -8001,6 +8023,20 @@
+       "resolved": "https://registry.npmjs.org/dotenv-expand/-/dotenv-expand-5.1.0.tgz",
+       "integrity": "sha512-YXQl1DSa4/PQyRfgrv6aoNjhasp/p4qs9FjJ4q4cQk+8m4r6k4ZSiEyytKG8f8W9gi8WsQtIObNmKd+tMzNTmA=="
+     },
++    "node_modules/dropbox": {
++      "version": "10.34.0",
++      "resolved": "https://registry.npmjs.org/dropbox/-/dropbox-10.34.0.tgz",
++      "integrity": "sha512-5jb5/XzU0fSnq36/hEpwT5/QIep7MgqKuxghEG44xCu7HruOAjPdOb3x0geXv5O/hd0nHpQpWO+r5MjYTpMvJg==",
++      "dependencies": {
++        "node-fetch": "^2.6.1"
++      },
++      "engines": {
++        "node": ">=0.10.3"
++      },
++      "peerDependencies": {
++        "@types/node-fetch": "^2.5.7"
++      }
++    },
+     "node_modules/duplexer": {
+       "version": "0.1.2",
+       "resolved": "https://registry.npmjs.org/duplexer/-/duplexer-0.1.2.tgz",
+@@ -9708,6 +9744,14 @@
+         "url": "https://github.com/sponsors/ljharb"
+       }
+     },
++    "node_modules/fuse.js": {
++      "version": "6.6.2",
++      "resolved": "https://registry.npmjs.org/fuse.js/-/fuse.js-6.6.2.tgz",
++      "integrity": "sha512-cJaJkxCCxC8qIIcPBF9yGxY0W/tVZS3uEISDxhYIdtk8OL93pe+6Zj7LjCqVV4dzbqcriOZ+kQ/NE4RXZHsIGA==",
++      "engines": {
++        "node": ">=10"
++      }
++    },
+     "node_modules/gensync": {
+       "version": "1.0.0-beta.2",
+       "resolved": "https://registry.npmjs.org/gensync/-/gensync-1.0.0-beta.2.tgz",
+@@ -13523,6 +13567,44 @@
+         "tslib": "^2.0.3"
+       }
+     },
++    "node_modules/node-fetch": {
++      "version": "2.7.0",
++      "resolved": "https://registry.npmjs.org/node-fetch/-/node-fetch-2.7.0.tgz",
++      "integrity": "sha512-c4FRfUm/dbcWZ7U+1Wq0AwCyFL+3nt2bEw05wfxSz+DWpWsitgmSgYmy2dQdWyKC1694ELPqMs/YzUSNozLt8A==",
++      "dependencies": {
++        "whatwg-url": "^5.0.0"
++      },
++      "engines": {
++        "node": "4.x || >=6.0.0"
++      },
++      "peerDependencies": {
++        "encoding": "^0.1.0"
++      },
++      "peerDependenciesMeta": {
++        "encoding": {
++          "optional": true
++        }
++      }
++    },
++    "node_modules/node-fetch/node_modules/tr46": {
++      "version": "0.0.3",
++      "resolved": "https://registry.npmjs.org/tr46/-/tr46-0.0.3.tgz",
++      "integrity": "sha512-N3WMsuqV66lT30CrXNbEjx4GEwlow3v6rr4mCcv6prnfwhS01rkgyFdjPNBYd9br7LpXV1+Emh01fHnq2Gdgrw=="
++    },
++    "node_modules/node-fetch/node_modules/webidl-conversions": {
++      "version": "3.0.1",
++      "resolved": "https://registry.npmjs.org/webidl-conversions/-/webidl-conversions-3.0.1.tgz",
++      "integrity": "sha512-2JAn3z8AR6rjK8Sm8orRC0h/bcl/DqL7tRPdGZ4I1CjdF+EaMLmYxBHyXuKL849eucPFhvBoxMsflfOb8kxaeQ=="
++    },
++    "node_modules/node-fetch/node_modules/whatwg-url": {
++      "version": "5.0.0",
++      "resolved": "https://registry.npmjs.org/whatwg-url/-/whatwg-url-5.0.0.tgz",
++      "integrity": "sha512-saE57nupxk6v3HY35+jzBwYa0rKSy0XR8JSxZPwgLr7ys0IBzhGviA1/TUGJLmSVqs8pb9AnvICXEuOHLprYTw==",
++      "dependencies": {
++        "tr46": "~0.0.3",
++        "webidl-conversions": "^3.0.0"
++      }
++    },
+     "node_modules/node-forge": {
+       "version": "1.3.1",
+       "resolved": "https://registry.npmjs.org/node-forge/-/node-forge-1.3.1.tgz",
+@@ -22495,6 +22577,16 @@
+       "resolved": "https://registry.npmjs.org/@types/node/-/node-16.18.11.tgz",
+       "integrity": "sha512-3oJbGBUWuS6ahSnEq1eN2XrCyf4YsWI8OyCvo7c64zQJNplk3mO84t53o8lfTk+2ji59g5ycfc6qQ3fdHliHuA=="
+     },
++    "@types/node-fetch": {
++      "version": "2.6.4",
++      "resolved": "https://registry.npmjs.org/@types/node-fetch/-/node-fetch-2.6.4.tgz",
++      "integrity": "sha512-1ZX9fcN4Rvkvgv4E6PAY5WXUFWFcRWxZa3EW83UjycOB9ljJCedb2CupIP4RZMEwF/M3eTcCihbBRgwtGbg5Rg==",
++      "peer": true,
++      "requires": {
++        "@types/node": "*",
++        "form-data": "^3.0.0"
++      }
++    },
+     "@types/parse-json": {
+       "version": "4.0.0",
+       "resolved": "https://registry.npmjs.org/@types/parse-json/-/parse-json-4.0.0.tgz",
+@@ -22617,6 +22709,14 @@
+         "@types/node": "*"
+       }
+     },
++    "@types/xlsx": {
++      "version": "0.0.36",
++      "resolved": "https://registry.npmjs.org/@types/xlsx/-/xlsx-0.0.36.tgz",
++      "integrity": "sha512-mvfrKiKKMErQzLMF8ElYEH21qxWCZtN59pHhWGmWCWFJStYdMWjkDSAy6mGowFxHXaXZWe5/TW7pBUiWclIVOw==",
++      "requires": {
++        "xlsx": "*"
++      }
++    },
+     "@types/yargs": {
+       "version": "16.0.5",
+       "resolved": "https://registry.npmjs.org/@types/yargs/-/yargs-16.0.5.tgz",
+@@ -24559,6 +24659,14 @@
+       "resolved": "https://registry.npmjs.org/dotenv-expand/-/dotenv-expand-5.1.0.tgz",
+       "integrity": "sha512-YXQl1DSa4/PQyRfgrv6aoNjhasp/p4qs9FjJ4q4cQk+8m4r6k4ZSiEyytKG8f8W9gi8WsQtIObNmKd+tMzNTmA=="
+     },
++    "dropbox": {
++      "version": "10.34.0",
++      "resolved": "https://registry.npmjs.org/dropbox/-/dropbox-10.34.0.tgz",
++      "integrity": "sha512-5jb5/XzU0fSnq36/hEpwT5/QIep7MgqKuxghEG44xCu7HruOAjPdOb3x0geXv5O/hd0nHpQpWO+r5MjYTpMvJg==",
++      "requires": {
++        "node-fetch": "^2.6.1"
++      }
++    },
+     "duplexer": {
+       "version": "0.1.2",
+       "resolved": "https://registry.npmjs.org/duplexer/-/duplexer-0.1.2.tgz",
+@@ -25818,6 +25926,11 @@
+       "resolved": "https://registry.npmjs.org/functions-have-names/-/functions-have-names-1.2.3.tgz",
+       "integrity": "sha512-xckBUXyTIqT97tq2x2AMb+g163b5JFysYk0x4qxNFwbfQkmNZoiRHb6sPzI9/QV33WeuvVYBUIiD4NzNIyqaRQ=="
+     },
++    "fuse.js": {
++      "version": "6.6.2",
++      "resolved": "https://registry.npmjs.org/fuse.js/-/fuse.js-6.6.2.tgz",
++      "integrity": "sha512-cJaJkxCCxC8qIIcPBF9yGxY0W/tVZS3uEISDxhYIdtk8OL93pe+6Zj7LjCqVV4dzbqcriOZ+kQ/NE4RXZHsIGA=="
++    },
+     "gensync": {
+       "version": "1.0.0-beta.2",
+       "resolved": "https://registry.npmjs.org/gensync/-/gensync-1.0.0-beta.2.tgz",
+@@ -28572,6 +28685,35 @@
+         "tslib": "^2.0.3"
+       }
+     },
++    "node-fetch": {
++      "version": "2.7.0",
++      "resolved": "https://registry.npmjs.org/node-fetch/-/node-fetch-2.7.0.tgz",
++      "integrity": "sha512-c4FRfUm/dbcWZ7U+1Wq0AwCyFL+3nt2bEw05wfxSz+DWpWsitgmSgYmy2dQdWyKC1694ELPqMs/YzUSNozLt8A==",
++      "requires": {
++        "whatwg-url": "^5.0.0"
++      },
++      "dependencies": {
++        "tr46": {
++          "version": "0.0.3",
++          "resolved": "https://registry.npmjs.org/tr46/-/tr46-0.0.3.tgz",
++          "integrity": "sha512-N3WMsuqV66lT30CrXNbEjx4GEwlow3v6rr4mCcv6prnfwhS01rkgyFdjPNBYd9br7LpXV1+Emh01fHnq2Gdgrw=="
++        },
++        "webidl-conversions": {
++          "version": "3.0.1",
++          "resolved": "https://registry.npmjs.org/webidl-conversions/-/webidl-conversions-3.0.1.tgz",
++          "integrity": "sha512-2JAn3z8AR6rjK8Sm8orRC0h/bcl/DqL7tRPdGZ4I1CjdF+EaMLmYxBHyXuKL849eucPFhvBoxMsflfOb8kxaeQ=="
++        },
++        "whatwg-url": {
++          "version": "5.0.0",
++          "resolved": "https://registry.npmjs.org/whatwg-url/-/whatwg-url-5.0.0.tgz",
++          "integrity": "sha512-saE57nupxk6v3HY35+jzBwYa0rKSy0XR8JSxZPwgLr7ys0IBzhGviA1/TUGJLmSVqs8pb9AnvICXEuOHLprYTw==",
++          "requires": {
++            "tr46": "~0.0.3",
++            "webidl-conversions": "^3.0.0"
++          }
++        }
++      }
++    },
+     "node-forge": {
+       "version": "1.3.1",
+       "resolved": "https://registry.npmjs.org/node-forge/-/node-forge-1.3.1.tgz",
+Index: src/types/repositories.ts
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.BaseRevisionTextPatchEP
+<+>import { z } from \"zod\";\r\n\r\nexport interface RepositoryI {\r\n  id: string;\r\n  name: string;\r\n  description: string;\r\n  repositoryType: string;\r\n  createdBy: string;\r\n  createdDate: {\r\n    value: string;\r\n    timezone: string;\r\n  };\r\n  updatedBy: string;\r\n  updatedDate: {\r\n    value: string;\r\n    timezone: string;\r\n  };\r\n  autoTagEnabled: boolean;\r\n  notReadyEnabled: boolean;\r\n  roleName: string;\r\n  advancedVideoEnabled: boolean;\r\n  customDigitalAssetsEnabled: boolean;\r\n  links: {\r\n    rel: string;\r\n    href: string;\r\n  }[];\r\n}\r\n\r\ninterface ItemLink {\r\n  href: string;\r\n  rel: string;\r\n  method: string;\r\n  mediaType: string;\r\n}\r\n\r\nexport interface ItemTab {\r\n  id: string;\r\n  type: string;\r\n  typeCategory: string;\r\n  links: ItemLink[];\r\n}\r\n\r\nexport interface ItemI {\r\n  translatable: true;\r\n  description: string;\r\n  language: string;\r\n  type: string;\r\n  fileExtension: string;\r\n  repositoryId: string;\r\n  name: string;\r\n  id: string;\r\n  links: ItemLink[];\r\n  fields: {\r\n    page_banner: any;\r\n    page_title: string;\r\n    keywords: string;\r\n    teaser_media: {\r\n      id: string;\r\n      type: string;\r\n      typeCategory: string;\r\n      links: ItemLink[];\r\n      tabs: ItemTab[];\r\n    };\r\n    fields_productpage_pdf_generator: string;\r\n    descriptions: string;\r\n    productCategory: string;\r\n    full_width: boolean;\r\n    html_content: string;\r\n    learnMoreLabel: string;\r\n    model: string;\r\n    download_pdf: string;\r\n    associated_pages: string;\r\n    sku: string;\r\n    gallery: Gallery[];\r\n    utm_content: string;\r\n    youtube_embed_link: string;\r\n    horizontal_sections_style: string;\r\n    meta_title: string;\r\n    header_title: string;\r\n    utm_campaign: string;\r\n    eloqua_page_type: string;\r\n    flag_regionalize: boolean;\r\n    horizontal_sections: string;\r\n    weight: string;\r\n    canonical: string;\r\n    technology: string;\r\n    footer_title: string;\r\n    header_media: HeaderMedia;\r\n    utm_term: null;\r\n    teaser_title: string;\r\n    teaser_summary: string;\r\n    cta_links: CtaLink[];\r\n    dictionary: null;\r\n    downloadpdf_link: null;\r\n    header_description: null;\r\n    background_color_of_sections: null;\r\n    page_subtitle: string;\r\n    pdf_generate: null;\r\n    switch_off_zoom: null;\r\n    utm_source: null;\r\n  };\r\n  slug: string;\r\n}\r\n\r\nexport const ItemSchema = z.object({\r\n  translatable: z.boolean(),\r\n  description: z.string(),\r\n  language: z.string(),\r\n  type: z.string(),\r\n  fileExtension: z.string(),\r\n  repositoryId: z.string(),\r\n  name: z.string(),\r\n  id: z.string(),\r\n});\r\n\r\nexport const ItemsSchema = z.array(ItemSchema.passthrough());\r\n\r\ninterface Gallery {\r\n  id: string;\r\n  type: string;\r\n  typeCategory: string;\r\n  links: ItemLink[];\r\n}\r\n\r\nexport interface HeaderMedia {\r\n  id: string;\r\n  type: string;\r\n  typeCategory: string;\r\n  links: ItemLink[];\r\n}\r\n\r\nexport interface CtaLink {\r\n  id: string;\r\n  type: string;\r\n  typeCategory: string;\r\n  links: ItemLink[];\r\n}\r\n
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/src/types/repositories.ts b/src/types/repositories.ts
+--- a/src/types/repositories.ts	(revision 068450b29696718f2ee70759ef2a5ca16aae762c)
++++ b/src/types/repositories.ts	(date 1692881282017)
+@@ -107,7 +107,7 @@
+   description: z.string(),
+   language: z.string(),
+   type: z.string(),
+-  fileExtension: z.string(),
++  fileExtension: z.string().optional(),
+   repositoryId: z.string(),
+   name: z.string(),
+   id: z.string(),
+@@ -135,3 +135,18 @@
+   typeCategory: string;
+   links: ItemLink[];
+ }
++
++export interface IRFile {
++    fields: {
++      documentType: string | null;
++        documentName: string | null;
++        documentLanguage: string | null;
++        categoryLevel1: string | null;
++        productCategory: string | null;
++        categoryLevel3: string | null;
++        categoryLevel4: string | null;
++        wgAmt: string | null;
++        industryL1: string | null;
++        industryL2: string | null;
++    }
++}
+Index: src/components/AssetDownloader.tsx
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/src/components/AssetDownloader.tsx b/src/components/AssetDownloader.tsx
+new file mode 100644
+--- /dev/null	(date 1693250271227)
++++ b/src/components/AssetDownloader.tsx	(date 1693250271227)
+@@ -0,0 +1,96 @@
++import {
++    Button,
++    Select,
++    Text,
++    VStack,
++    Progress,
++    Skeleton,
++    Box,
++    Flex,
++    Checkbox
++} from '@chakra-ui/react';
++import React, { useEffect, useState } from 'react';
++import { getAllTypes } from "../services/types.service";
++import { fetchAllItemsOfTypeFromRepositoryIdScroll } from "../services/assets.service";
++import { saveJSONToExcelFile } from "../services/files.service";
++import { useSearchParams } from "react-router-dom";
++
++const AssetDownloader: React.FC = () => {
++    const [searchParams] = useSearchParams();
++    const repositoryId = searchParams.get("id") || ""
++    const repositoryName = searchParams.get("name") || ""
++    const [selectedType, setSelectedType] = useState<string | null>(null);
++    const [downloadProgress, setDownloadProgress] = useState<string>("");
++    const [isDownloading, setIsDownloading] = useState<boolean>(false);
++    const [isLoadingTypes, setIsLoadingTypes] = useState<boolean>(false);
++    const [downloadTypes, setTypes] = useState<string[]>([]);
++    const [onlyMaster, setOnlyMaster] = useState<boolean>(false); // State do przechowywania informacji o zaznaczeniu opcji
++
++    useEffect(() => {
++        const fetchData = async () => {
++            setIsLoadingTypes(true)
++            try {
++                const types = await getAllTypes();
++                setTypes(types.map(t => t.name));
++            } catch (err) {
++                console.log(err);
++            }
++            setIsLoadingTypes(false)
++        };
++
++        fetchData();
++    }, []);
++
++    async function fetchAsset(type: string | null) {
++        if (!type) return
++        setIsDownloading(true)
++        const data = await fetchAllItemsOfTypeFromRepositoryIdScroll(
++            repositoryId,
++            [type],
++            setDownloadProgress,
++            {
++                onlyMaster: onlyMaster
++            }
++        )
++        await saveJSONToExcelFile(data, `${repositoryName}-${type}.xlsx`, "OCM", true)
++        setIsDownloading(false)
++    }
++
++    return (
++        <VStack spacing={5}>
++            <Skeleton w={"100%"} isLoaded={!isLoadingTypes}>
++                {isDownloading &&
++                    <Box mb={4}>
++                        <Flex direction={"column"} gap={1}>
++                            <Text>{downloadProgress}</Text>
++                            <Progress w={"100%"} isIndeterminate colorScheme={"blue"} />
++                        </Flex>
++                    </Box>
++                }
++                <Select
++                    placeholder="Choose asset type to download"
++                    onChange={(e) => setSelectedType(e.target.value)}
++                >
++                    {downloadTypes.map((option) => (
++                        <option key={option} value={option}>
++                            {option}
++                        </option>
++                    ))}
++                </Select>
++                <Box pt={4}>
++                    <Checkbox
++                        isChecked={onlyMaster}
++                        onChange={(e) => setOnlyMaster(e.target.checked)}
++                    >
++                        Download only Master Version
++                    </Checkbox>
++                </Box>
++            </Skeleton>
++            <Button w={"100%"} onClick={() => fetchAsset(selectedType)} isDisabled={!selectedType || isDownloading}>
++                Download
++            </Button>
++        </VStack>
++    );
++};
++
++export default AssetDownloader;
+Index: src/components/FuzzySearchInput.tsx
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/src/components/FuzzySearchInput.tsx b/src/components/FuzzySearchInput.tsx
+new file mode 100644
+--- /dev/null	(date 1692919196153)
++++ b/src/components/FuzzySearchInput.tsx	(date 1692919196153)
+@@ -0,0 +1,70 @@
++import React, { useState, useEffect } from 'react';
++import { Input, List, ListItem, useColorMode } from "@chakra-ui/react";
++import Fuse from "fuse.js";
++
++type FuzzySearchInputProps = {
++    options: string[];
++    onSelect: (value: string) => void;
++    placeholder?: string;
++    value?: string | null;
++};
++
++const FuzzySearchInput: React.FC<FuzzySearchInputProps> = ({ options, onSelect, placeholder, value }) => {
++    const [inputValue, setInputValue] = useState(value || "");
++    const [filteredOptions, setFilteredOptions] = useState<string[]>(options);
++    const [isListVisible, setListVisible] = useState(false);
++    const { colorMode } = useColorMode();
++
++    useEffect(() => {
++        setInputValue(value || "");
++    }, [value]);
++
++    useEffect(() => {
++        const fuse = new Fuse(options, { threshold: 0.4 });
++        if (inputValue) {
++            setFilteredOptions(fuse.search(inputValue).map(result => result.item));
++        } else {
++            setFilteredOptions(options);
++        }
++    }, [inputValue, options]);
++
++    const handleItemClick = (item: string) => {
++        onSelect(item);
++        setInputValue(item);
++        setListVisible(false);
++    };
++
++    return (
++        <div style={{ width: "100%"}}>
++            <Input
++                placeholder={placeholder}
++                value={inputValue}
++                onChange={e => setInputValue(e.target.value)}
++                onFocus={() => setListVisible(true)}
++                onBlur={() => setTimeout(() => setListVisible(false), 200)}
++            />
++            {(isListVisible && filteredOptions.length > 0) && (
++                <List
++                    border="1px solid"
++                    borderColor={colorMode === "dark" ? "gray.600" : "gray.200"}
++                    borderRadius="md"
++                    mt={2}
++                    position="absolute"
++                    zIndex={1}
++                    width="100%"
++                    maxHeight="300px"
++                    overflowY="auto"
++                    bg={colorMode === "dark" ? "gray.800" : "white"}
++                >
++                    {filteredOptions.map((item, index) => (
++                        <ListItem key={index} py={2} px={3} cursor="pointer" onClick={() => handleItemClick(item)}>
++                            {item}
++                        </ListItem>
++                    ))}
++                </List>
++            )}
++        </div>
++    );
++};
++
++export default FuzzySearchInput;
+Index: src/routes/Home.tsx
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.BaseRevisionTextPatchEP
+<+>import {\r\n  Card,\r\n  CardBody,\r\n  CardHeader,\r\n  Heading,\r\n  SimpleGrid,\r\n  Text,\r\n} from \"@chakra-ui/react\";\r\nimport { Link } from \"react-router-dom\";\r\nimport { motion } from \"framer-motion\";\r\nimport withAuth from \"../hoc/withAuth\";\r\nimport { NEXT_ACTION_PARAM_NAME, NextAction } from \"./Repositories\";\r\n\r\nconst Home = () => {\r\n  return (\r\n    <SimpleGrid\r\n      padding={4}\r\n      spacing={4}\r\n      templateColumns=\"repeat(auto-fill, minmax(200px, 1fr))\"\r\n    >\r\n      <CardWithDescription\r\n        cardLink=\"/repositories\"\r\n        cardTitle=\"Assets export\"\r\n        cardDescription=\"Export assets from specific repository\"\r\n      />\r\n      <CardWithDescription\r\n        cardLink=\"/assets-import\"\r\n        cardTitle=\"Assets import\"\r\n        cardDescription=\"Change existing assets using Excel file\"\r\n      />\r\n      <CardWithDescription\r\n        cardLink=\"/repositories\"\r\n        cardTitle=\"Distributor pages\"\r\n        cardDescription=\"Generate distributor pages using Excel\"\r\n        nextAction={NextAction.GENERATE_DISTRIBUTOR_PAGES}\r\n      />\r\n    </SimpleGrid>\r\n  );\r\n};\r\n\r\ntype CardWithDescriptionProps = {\r\n  cardTitle: string;\r\n  cardDescription: string;\r\n  cardLink: string;\r\n  nextAction?: NextAction;\r\n};\r\n\r\nconst CardWithDescription = ({\r\n  cardTitle,\r\n  cardDescription,\r\n  cardLink,\r\n  nextAction,\r\n}: CardWithDescriptionProps) => {\r\n  return (\r\n    <motion.div\r\n      whileHover={{\r\n        scale: 1.05,\r\n      }}\r\n    >\r\n      <Link\r\n        to={{\r\n          pathname: cardLink,\r\n          search: nextAction\r\n            ? `?${NEXT_ACTION_PARAM_NAME}=${nextAction}`\r\n            : undefined,\r\n        }}\r\n      >\r\n        <Card>\r\n          <CardHeader>\r\n            <Heading size=\"md\">{cardTitle}</Heading>\r\n          </CardHeader>\r\n          <CardBody>\r\n            <Text>{cardDescription}</Text>\r\n          </CardBody>\r\n        </Card>\r\n      </Link>\r\n    </motion.div>\r\n  );\r\n};\r\n\r\nexport default withAuth(Home);\r\n
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/src/routes/Home.tsx b/src/routes/Home.tsx
+--- a/src/routes/Home.tsx	(revision 068450b29696718f2ee70759ef2a5ca16aae762c)
++++ b/src/routes/Home.tsx	(date 1692874831830)
+@@ -34,6 +34,12 @@
+         cardDescription="Generate distributor pages using Excel"
+         nextAction={NextAction.GENERATE_DISTRIBUTOR_PAGES}
+       />
++      <CardWithDescription
++        cardLink="/repositories"
++        cardTitle="Infinity IQ"
++        cardDescription="Generate distributor pages using Excel"
++        nextAction={NextAction.INFINITY_IQ}
++      />
+     </SimpleGrid>
+   );
+ };
+Index: src/App.tsx
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.BaseRevisionTextPatchEP
+<+>import React from \"react\";\r\nimport { HashRouter, Route, Routes } from \"react-router-dom\";\r\n\r\nimport { ChakraProvider } from \"@chakra-ui/react\";\r\nimport Header from \"./components/Header\";\r\nimport { AuthProvider } from \"./context/AuthContext\";\r\nimport Repositories from \"./routes/Repositories\";\r\nimport Cors from \"./routes/Cors\";\r\nimport Home from \"./routes/Home\";\r\nimport Login from \"./routes/Login\";\r\nimport RepositoryExport from \"./routes/RepositoryExport\";\r\nimport AssetsImport from \"./routes/AssetsImport\";\r\nimport GenerateDistributorPages from \"./routes/GenerateDistributorPages\";\r\n\r\nconst withChakra = (Component: React.FC) => {\r\n  return () => (\r\n    <ChakraProvider>\r\n      <Component />\r\n    </ChakraProvider>\r\n  );\r\n};\r\n\r\nconst App = () => {\r\n  return (\r\n    <HashRouter>\r\n      <AuthProvider>\r\n        <Header />\r\n\r\n        <Routes>\r\n          <Route path=\"/\" element={<Home />}></Route>\r\n          <Route path=\"/repositories\" element={<Repositories />}></Route>\r\n          <Route path=\"/login\" element={<Login />}></Route>\r\n          <Route path=\"/cors\" element={<Cors />}></Route>\r\n          <Route path=\"/repository-export\" element={<RepositoryExport />}></Route>\r\n          <Route path=\"/assets-import\" element={<AssetsImport />}></Route>\r\n          <Route path=\"/generate-distributor-pages\" element={<GenerateDistributorPages />}></Route>\r\n        </Routes>\r\n      </AuthProvider>\r\n    </HashRouter>\r\n  );\r\n};\r\n\r\nexport default withChakra(App);\r\n
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/src/App.tsx b/src/App.tsx
+--- a/src/App.tsx	(revision 068450b29696718f2ee70759ef2a5ca16aae762c)
++++ b/src/App.tsx	(date 1692977638226)
+@@ -11,6 +11,8 @@
+ import RepositoryExport from "./routes/RepositoryExport";
+ import AssetsImport from "./routes/AssetsImport";
+ import GenerateDistributorPages from "./routes/GenerateDistributorPages";
++import InfinityIQ from "./routes/InfinityIQ";
++import PasswordProtection from "./components/WithPasswordProtection";
+ 
+ const withChakra = (Component: React.FC) => {
+   return () => (
+@@ -34,6 +36,11 @@
+           <Route path="/repository-export" element={<RepositoryExport />}></Route>
+           <Route path="/assets-import" element={<AssetsImport />}></Route>
+           <Route path="/generate-distributor-pages" element={<GenerateDistributorPages />}></Route>
++          <Route path="/infinity-iq" element={
++            <PasswordProtection password={"infinityiq"}>
++              <InfinityIQ />
++            </PasswordProtection>
++          }></Route>
+         </Routes>
+       </AuthProvider>
+     </HashRouter>
+Index: src/components/FileUpload.tsx
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/src/components/FileUpload.tsx b/src/components/FileUpload.tsx
+new file mode 100644
+--- /dev/null	(date 1693009996189)
++++ b/src/components/FileUpload.tsx	(date 1693009996189)
+@@ -0,0 +1,136 @@
++import React, {ReactElement, useCallback, useState} from 'react';
++import {useDropzone} from 'react-dropzone';
++import {Box, Text, Icon, VStack, Button} from '@chakra-ui/react';
++import {AttachmentIcon, CheckCircleIcon, CloseIcon} from '@chakra-ui/icons';
++import {motion} from 'framer-motion';
++
++const MotionBox = motion(Box);
++
++interface FileUploadProps {
++    onFileDropTop?: (files: File[]) => void;
++    onFileDropBottom?: (files: File[]) => void;
++    children?: ReactElement | ReactElement[];
++}
++
++const FileUpload: React.FC<FileUploadProps> = ({
++                                                   onFileDropTop,
++                                                   onFileDropBottom,
++                                                   children,
++                                               }) => {
++    const [uploadedFileTop, setUploadedFileTop] = useState<File | null>(null);
++    const [uploadedFileBottom, setUploadedFileBottom] = useState<File | null>(null);
++    const resetTop = () => setUploadedFileTop(null);
++    const resetBottom = () => setUploadedFileBottom(null);
++
++    const onDropTop = useCallback((acceptedFiles: File[]) => {
++        setUploadedFileTop(acceptedFiles[0]);
++        if (onFileDropTop) {
++            onFileDropTop(acceptedFiles);
++        }
++    }, [onFileDropTop]);
++
++    const onDropBottom = useCallback((acceptedFiles: File[]) => {
++        setUploadedFileBottom(acceptedFiles[0]);
++        if (onFileDropBottom) {
++            onFileDropBottom(acceptedFiles);
++        }
++    }, [onFileDropBottom]);
++
++    const renderContent = (isDragActive: boolean, uploadedFile: File | null, resetFunction: () => void, isModifier: boolean = false) => {
++        if (uploadedFile) {
++            return (
++                <VStack spacing={2}>
++                    <Icon as={CheckCircleIcon} boxSize={6} color="green.300"/>
++                    <Text color="gray.400">{uploadedFile.name}</Text>
++                    <Button size="sm" onClick={(e) => {
++                        e.stopPropagation();
++                        resetFunction();
++                    }} leftIcon={<CloseIcon/>}>Usuń</Button>
++                </VStack>
++            );
++        }
++        return (
++            <VStack spacing={2}>
++                <Icon as={AttachmentIcon} boxSize={6} color="gray.300"/>
++                <Text
++                    color="gray.400">
++                    {!isDragActive
++                        ? (isModifier ? "Modifier File" : "File to be Updated")
++                        : "Drag & drop a file here or click to select"
++                    }
++                </Text>
++            </VStack>
++        );
++    }
++
++    const {
++        getRootProps: getRootPropsTop,
++        getInputProps: getInputPropsTop,
++        isDragActive: dragActiveTop,
++    } = useDropzone({
++        onDrop: onDropTop, maxFiles: 1, accept: {
++            'application/vnd.ms-excel': ['.xls'],
++            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': ['.xlsx'],
++            'text/csv': ['.csv'],
++        }
++    });
++
++    const {
++        getRootProps: getRootPropsBottom,
++        getInputProps: getInputPropsBottom,
++        isDragActive: dragActiveBottom,
++    } = useDropzone({
++        onDrop: onDropBottom, maxFiles: 1, accept: {
++            'application/vnd.ms-excel': ['.xls'],
++            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': ['.xlsx'],
++            'text/csv': ['.csv'],
++        }
++    });
++
++    return (
++        <Box display="flex">
++            <Box flex="1" pr={2}>
++                <MotionBox
++                    {...getRootPropsTop()}
++                    height="200px"
++                    bg="gray.900"
++                    borderRadius="md"
++                    display="flex"
++                    alignItems="center"
++                    justifyContent="center"
++                    mb={2}
++                    textAlign="center"
++                    transition={{duration: 0.3}}
++                    cursor="pointer"
++                    _hover={{bg: "gray.600"}}
++                >
++                    <input {...getInputPropsTop()} />
++                    {renderContent(dragActiveTop, uploadedFileTop, resetTop)}
++                </MotionBox>
++
++                <MotionBox
++                    {...getRootPropsBottom()}
++                    height="200px"
++                    bg="gray.900"
++                    borderRadius="md"
++                    display="flex"
++                    alignItems="center"
++                    justifyContent="center"
++                    textAlign="center"
++                    transition={{duration: 0.3}}
++                    cursor="pointer"
++                    _hover={{bg: "gray.600"}}
++                >
++                    <input {...getInputPropsBottom()} />
++                    {renderContent(dragActiveBottom, uploadedFileBottom, resetBottom, true)}
++                </MotionBox>
++            </Box>
++
++            <Box flex="1" bg="gray.800" borderRadius="md">
++                {children}
++            </Box>
++        </Box>
++    );
++};
++
++export default FileUpload;
+Index: src/components/AssetBox.tsx
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/src/components/AssetBox.tsx b/src/components/AssetBox.tsx
+new file mode 100644
+--- /dev/null	(date 1693003881197)
++++ b/src/components/AssetBox.tsx	(date 1693003881197)
+@@ -0,0 +1,321 @@
++import {useSearchParams} from "react-router-dom";
++import {
++    Box, Button, Divider, Flex, Heading, useToast, Wrap, Text, AlertDialog,
++    AlertDialogBody,
++    AlertDialogFooter,
++    AlertDialogHeader,
++    AlertDialogContent,
++    AlertDialogOverlay,
++    Select,
++    Progress, Card, CardBody,
++
++} from "@chakra-ui/react";
++import {DownloadIcon} from "@chakra-ui/icons";
++import {FunctionComponent, useRef, useState} from "react";
++import {fetchAllItemsOfTypeFromRepositoryIdScroll} from "../services/assets.service";
++import {IRFile} from "../types/repositories";
++import {processExcelFiles, readExcelFile, saveJSONToExcelFile, unflattenObject} from "../services/files.service";
++import ExcelUploader from "./ExcelUploader";
++import ExcelSettingsModal from "./ExcelSettingsModal";
++import * as XLSX from 'xlsx';
++import {DropboxCLI} from "./Dropbox";
++import FileUpload from "./FileUpload";
++import {useAuth} from "../context/AuthContext";
++
++
++interface Props {
++    type: string,
++    availableAssetTypes: string[],
++}
++
++const AssetBox: FunctionComponent<Props> = ({
++                                                type, availableAssetTypes,
++                                            }) => {
++    const [data, setData] = useState<IRFile[]>([])
++    const [file, setFile] = useState<File | null>(null)
++    const [isLoading, setIsLoading] = useState<boolean>(false)
++    const [loadingProgress, setLoadingProgress] = useState<string>("");
++    const toast = useToast();
++    const [searchParams] = useSearchParams();
++    const repositoryId = searchParams.get("id") || ""
++    const repositoryName = searchParams.get("name") || ""
++
++    const [secondFile, setSecondFile] = useState<File | null>(null);  // Drugi plik Excel
++    const [unmatchedExcel, setUnmatchedExcel] = useState<Buffer | null>(null);
++    const [matchedExcel, setMatchedExcel] = useState<Buffer | null>(null);
++    const [matchedObjects, setMatchedObjects] = useState<any[] | null>(null);
++
++    const [isOpen, setIsOpen] = useState<boolean>(false);
++    const onClose = () => setIsOpen(false);
++    const cancelRef = useRef(null);
++    const [selectedAssetType, setSelectedAssetType] = useState<string>("");
++    const dropbox = new DropboxCLI("sl.Bk1iEND_ENnmYuDQtuc1zUv5bqOeVCiL0nKM_tnfOa_N-NpgfCp9XvbikQloqsH5VYHQ7OB1xnfzWpakCtl5BlSjuH_tWsS3MABjIEE-aWXHajc-T4W-0VmYWVPDaJJUhBe8bwEBkDwvLLw")
++
++
++    const [downloadHeaders, setDownloadHeaders] = useState<string[]>([])
++    const [importHeaders, setImportHeaders] = useState<string[]>([])
++    const { user } = useAuth();
++
++    const [isModalOpen, setIsModalOpen] = useState<boolean>(false)
++
++    const handleAssetChange = (event: React.ChangeEvent<HTMLSelectElement>) => {
++        setSelectedAssetType(event.target.value);
++    };
++
++    const handleMappingConfirmed = async (mapping: { import: string; download: string }[], keyField: string | null) => {
++        if (!keyField) return;
++        if (file && secondFile) {
++            const result = await processExcelFiles(file, secondFile, keyField, mapping);
++            setUnmatchedExcel(result.unmatchedExcel);
++            setMatchedExcel(result.matchedExcel);
++            setMatchedObjects(result.matchedObjects);
++        } else {
++            toast({
++                title: "Error",
++                description: "Both Excel files must be uploaded.",
++                status: "error",
++                duration: 9000,
++                isClosable: true,
++            });
++        }
++    };
++
++    function saveBufferToExcelFile(buffer: Uint8Array, filename: string) {
++        const blob = new Blob([buffer], {type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
++        const link = document.createElement('a');
++        link.href = window.URL.createObjectURL(blob);
++        link.download = filename;
++        link.click();
++    }
++
++    function getHeaders(file: File): Promise<string[]> {
++        return new Promise((resolve, reject) => {
++            const reader = new FileReader();
++
++            reader.onload = function (e: ProgressEvent<FileReader>) {
++                if (e.target && e.target.result) {
++                    const data = e.target.result as string;
++
++                    // Read the workbook
++                    const workbook = XLSX.read(data, {type: 'binary'});
++
++                    // Get the first sheet name
++                    const firstSheetName = workbook.SheetNames[0];
++                    const worksheet = workbook.Sheets[firstSheetName];
++
++                    // Convert the sheet to JSON
++                    const json: any[][] = XLSX.utils.sheet_to_json(worksheet, {header: 1});
++
++                    // Assuming the first row of the sheet is the header
++                    const headers = json[0] as string[];
++
++                    resolve(headers);
++                } else {
++                    reject(new Error("Failed to read the file."));
++                }
++            };
++
++            reader.onerror = function (e) {
++                reject(new Error("Error reading the file."));
++            };
++
++            reader.readAsBinaryString(file);
++        });
++    }
++
++    const fetchAssets = async () => {
++        setIsLoading(true)
++        try {
++            const data = await fetchAllItemsOfTypeFromRepositoryIdScroll(
++                repositoryId,
++                [selectedAssetType],
++                setLoadingProgress
++            )
++            console.log(data)
++            setData(data)
++
++            await saveJSONToExcelFile(data, `${repositoryName}-${selectedAssetType}.xlsx`, "OCM", true);
++
++
++        } catch (e) {
++            toast({
++                title: "Error",
++                description: "Could not fetch pages",
++                status: "error",
++                duration: 9000,
++                isClosable: true,
++            });
++        }
++        setIsLoading(false)
++    }
++
++
++    const importExcel = async (file: File[] | File) => {
++        const computedFile = Array.isArray(file) ? file[0] : file;
++        const data = await readExcelFile(computedFile) as any[]
++        setFile(computedFile)
++        setDownloadHeaders(await getHeaders(computedFile))
++    }
++
++    const importExcel2 = async (file: File[] | File) => {
++        const computedFile = Array.isArray(file) ? file[0] : file;
++        const data = await readExcelFile(computedFile) as any[]
++        setSecondFile(computedFile)
++        setImportHeaders(await getHeaders(computedFile))
++    }
++
++    const confirmChanges = () => {
++        // Logika zatwierdzania zmian
++        console.log("Zmiany zostały zatwierdzone");
++        onClose();
++    };
++
++    return (
++        <Box padding={5} border="1px" borderColor="gray.200" borderRadius="md">
++            <Flex direction="column" gap={4}>
++                <Select
++                    value={selectedAssetType}
++                    onChange={handleAssetChange}
++                    isDisabled={isLoading}
++                >
++                    {availableAssetTypes.map(asset => (
++                        <option key={asset} value={asset}>{asset}</option>
++                    ))}
++                </Select>
++
++                {isLoading && (
++                    <Flex direction="column" gap={4} mt={3}>
++                        <Text color="blue.500">Downloading...</Text>
++                        <Progress size="xs" isIndeterminate mt={2}/>
++                        <Text mt={2}>{loadingProgress}</Text>
++                    </Flex>
++                )}
++
++                <Button
++                    isDisabled={isLoading || selectedAssetType === ""}
++                    onClick={fetchAssets}
++                    leftIcon={<DownloadIcon/>}
++                >
++                    Download {selectedAssetType}
++                </Button>
++
++                <Flex direction={"column"} gap={4}>
++                    <ExcelUploader onFileUploaded={importExcel} label={file ? file.name : "Upload First File"}/>
++                    <ExcelUploader onFileUploaded={importExcel2}
++                                   label={secondFile ? secondFile.name : "Upload Second File"}/>
++                </Flex>
++
++
++                <FileUpload
++                    onFileDropTop={importExcel}
++                    onFileDropBottom={importExcel2}
++                >
++                    <Button isDisabled={file === null || secondFile === null} colorScheme="blue"
++                            onClick={() => setIsModalOpen(true)}>
++                        Map Excel Files
++                    </Button>
++                    <ExcelSettingsModal
++                        isOpen={isModalOpen}
++                        onClose={() => setIsModalOpen(false)}
++                        downloadHeaders={downloadHeaders}
++                        importHeaders={importHeaders}
++                        onMappingConfirmed={handleMappingConfirmed}
++                    />
++                    <>
++                        <Button isDisabled={matchedExcel === null || unmatchedExcel === null} colorScheme="red"
++                                onClick={() => setIsOpen(true)}>
++                            Confirm Changes
++                        </Button>
++
++                        {matchedExcel &&
++                            <Button colorScheme="green"
++                                    onClick={() => saveBufferToExcelFile(matchedExcel, "matched.xlsx")}>
++                                Save Matched Excel
++                            </Button>}
++
++                        {unmatchedExcel && <Button colorScheme="green"
++                                                   onClick={() => saveBufferToExcelFile(unmatchedExcel, "unmatched.xlsx")}>
++                            Save Unmatched Excel
++                        </Button>}
++
++                        <Button isDisabled={secondFile === null} onClick={async () => {
++                            if (secondFile) {
++                                await dropbox.uploadFile(secondFile, `${new Date()}-${user}-${secondFile.name}`)
++                            }
++                        }}>
++                            Dropbox
++                        </Button>
++                    </>
++                </FileUpload>
++
++
++                <Flex direction="row" gap={4} alignItems="center" mt={4}>
++
++                    <Button isDisabled={file === null || secondFile === null} colorScheme="blue"
++                            onClick={() => setIsModalOpen(true)}>
++                        Map Excel Files
++                    </Button>
++                    <ExcelSettingsModal
++                        isOpen={isModalOpen}
++                        onClose={() => setIsModalOpen(false)}
++                        downloadHeaders={downloadHeaders}
++                        importHeaders={importHeaders}
++                        onMappingConfirmed={handleMappingConfirmed}
++                    />
++                    <Button isDisabled={matchedExcel === null || unmatchedExcel === null} colorScheme="red"
++                            onClick={() => setIsOpen(true)}>
++                        Confirm Changes
++                    </Button>
++
++                    {matchedExcel &&
++                        <Button colorScheme="green" onClick={() => saveBufferToExcelFile(matchedExcel, "matched.xlsx")}>
++                            Save Matched Excel
++                        </Button>}
++
++                    {unmatchedExcel && <Button colorScheme="green"
++                                               onClick={() => saveBufferToExcelFile(unmatchedExcel, "unmatched.xlsx")}>
++                        Save Unmatched Excel
++                    </Button>}
++
++                    <Button isDisabled={secondFile === null} onClick={async () => {
++                        if (secondFile) {
++                            await dropbox.uploadFile(secondFile, `${new Date().getTime()}-${user?.displayName}-${secondFile.name}`)
++                        }
++                    }}>
++                        Dropbox
++                    </Button>
++
++
++                    <AlertDialog
++                        isOpen={isOpen}
++                        leastDestructiveRef={cancelRef}
++                        onClose={onClose}
++                    >
++                        <AlertDialogOverlay>
++                            <AlertDialogContent>
++                                <AlertDialogHeader fontSize="lg" fontWeight="bold">
++                                    Warning
++                                </AlertDialogHeader>
++                                <AlertDialogBody>
++                                    Are you sure you want to confirm these changes? Ensure you have used the mapper
++                                    correctly. Incorrect usage may lead to errors.
++                                </AlertDialogBody>
++                                <AlertDialogFooter>
++                                    <Button ref={cancelRef} onClick={onClose}>
++                                        Cancel
++                                    </Button>
++                                    <Button colorScheme="red" onClick={confirmChanges} ml={3}>
++                                        Confirm
++                                    </Button>
++                                </AlertDialogFooter>
++                            </AlertDialogContent>
++                        </AlertDialogOverlay>
++                    </AlertDialog>
++                </Flex>
++            </Flex>
++        </Box>
++    );
++};
++
++
++export default AssetBox;
+Index: src/components/ExcelUploader.tsx
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/src/components/ExcelUploader.tsx b/src/components/ExcelUploader.tsx
+new file mode 100644
+--- /dev/null	(date 1692980650716)
++++ b/src/components/ExcelUploader.tsx	(date 1692980650716)
+@@ -0,0 +1,48 @@
++import React, { useRef } from "react";
++import {Button, Box, useToast, Text} from "@chakra-ui/react";
++import {ArrowUpIcon} from "@chakra-ui/icons";
++
++interface ExcelUploaderProps {
++    onFileUploaded: (file: File) => void;
++    label: string;
++}
++
++const ExcelUploader: React.FC<ExcelUploaderProps> = ({ onFileUploaded, label }) => {
++    const inputFileRef = useRef<HTMLInputElement>(null);
++    const toast = useToast();
++
++    const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
++        const file = e.target.files?.[0];
++        if (file) {
++            onFileUploaded(file);
++            toast({
++                title: "File uploaded",
++                description: `You've uploaded ${file.name}`,
++                status: "success",
++                duration: 3000,
++                isClosable: true,
++            });
++        }
++    };
++
++    const handleButtonClick = () => {
++        inputFileRef.current?.click();
++    };
++
++    return (
++        <Box>
++            <input
++                type="file"
++                accept=".xlsx, .xls"
++                style={{ display: "none" }}
++                ref={inputFileRef}
++                onChange={handleFileChange}
++            />
++            <Button w={"100%"} leftIcon={<ArrowUpIcon />} onClick={handleButtonClick}>
++               {label}
++            </Button>
++        </Box>
++    );
++};
++
++export default ExcelUploader;
+Index: src/components/ExcelSettingsModal.tsx
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/src/components/ExcelSettingsModal.tsx b/src/components/ExcelSettingsModal.tsx
+new file mode 100644
+--- /dev/null	(date 1692920417829)
++++ b/src/components/ExcelSettingsModal.tsx	(date 1692920417829)
+@@ -0,0 +1,120 @@
++import React, { useState, useEffect } from 'react';
++import {
++    Modal, ModalOverlay, ModalContent, ModalHeader,
++    ModalFooter, ModalBody, Button, Tooltip, VStack,
++    Box, Heading, Table, Tbody, Tr, Td,
++    Toast, useToast
++} from "@chakra-ui/react";
++import { InfoIcon } from '@chakra-ui/icons';
++import FuzzySearchInput from './FuzzySearchInput';
++
++type ExcelSettingsModalProps = {
++    importHeaders: string[];
++    downloadHeaders: string[];
++    isOpen: boolean;
++    onClose: () => void;
++    onMappingConfirmed: (mapping: { import: string; download: string }[], keyField: string|null) => void;
++};
++
++const ExcelSettingsModal: React.FC<ExcelSettingsModalProps> = ({ importHeaders, downloadHeaders, isOpen, onClose, onMappingConfirmed }) => {
++    const [selectedKeyField, setSelectedKeyField] = useState<string | null>(null);
++    const [columnMapping, setColumnMapping] = useState<{ import: string, download: string }[]>([]);
++    const [selectedImportColumn, setSelectedImportColumn] = useState<string | null>(null);
++    const [selectedDownloadColumn, setSelectedDownloadColumn] = useState<string | null>(null);
++
++    const toast = useToast();
++
++    const addMapping = () => {
++        if (!selectedImportColumn || !selectedDownloadColumn) {
++            toast({
++                title: "Incomplete selection.",
++                description: "Please select both an import and download column.",
++                status: "error",
++                duration: 3000,
++                isClosable: true,
++            });
++            return;
++        }
++
++        setColumnMapping(prev => [...prev, { import: selectedImportColumn, download: selectedDownloadColumn }]);
++        setSelectedImportColumn(null);
++        setSelectedDownloadColumn(null);
++    };
++
++
++    const confirmMapping = () => {
++        onMappingConfirmed(columnMapping, selectedKeyField);
++        toast({
++            title: "Mapping confirmed.",
++            description: "Your columns have been successfully mapped.",
++            status: "success",
++            duration: 5000,
++            isClosable: true,
++        });
++        onClose();
++    };
++
++    const availableImportHeaders = importHeaders.filter(header => header !== selectedKeyField && !columnMapping.some(map => map.import === header));
++    const availableDownloadHeaders = downloadHeaders.filter(header => !columnMapping.some(map => map.download === header));
++
++    return (
++        <Modal isOpen={isOpen} onClose={onClose}>
++            <ModalOverlay />
++            <ModalContent>
++                <ModalHeader>Excel Mapping</ModalHeader>
++                <ModalBody>
++                    <Box mb={4}>
++                        <Heading size="md" mb={2}>Select Key Field</Heading>
++                        <FuzzySearchInput
++                            options={importHeaders}
++                            onSelect={value => setSelectedKeyField(value)}
++                        />
++                    </Box>
++
++                    {selectedKeyField && (
++                        <Box mb={4}>
++                            <Heading size="md" mb={2}>
++                                Map Columns
++                                <Tooltip hasArrow label="Map the columns from your imported Excel to the columns in your desired output.">
++                                    <InfoIcon boxSize="0.8em" ml={2} />
++                                </Tooltip>
++                            </Heading>
++
++                            <VStack spacing={3}>
++                                <FuzzySearchInput
++                                    options={availableImportHeaders}
++                                    onSelect={value => setSelectedImportColumn(value)}
++                                    placeholder="Search Import Columns"
++                                    value={selectedImportColumn}
++                                />
++                                <FuzzySearchInput
++                                    options={availableDownloadHeaders}
++                                    onSelect={value => setSelectedDownloadColumn(value)}
++                                    placeholder="Search Download Columns"
++                                    value={selectedDownloadColumn}
++                                />
++                                <Button onClick={addMapping} w="100%">Add Selected Columns</Button>
++                            </VStack>
++
++                            <Table variant="simple">
++                                <Tbody>
++                                    {columnMapping.map((mapping, index) => (
++                                        <Tr key={index}>
++                                            <Td>{mapping.import}</Td>
++                                            <Td>{mapping.download}</Td>
++                                        </Tr>
++                                    ))}
++                                </Tbody>
++                            </Table>
++                        </Box>
++                    )}
++                </ModalBody>
++                <ModalFooter>
++                    <Button colorScheme="blue" onClick={confirmMapping} w="100%">Confirm Mapping</Button>
++                </ModalFooter>
++            </ModalContent>
++        </Modal>
++    );
++}
++
++export default ExcelSettingsModal;
