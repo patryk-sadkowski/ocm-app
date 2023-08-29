@@ -28,6 +28,7 @@ export enum NextAction {
   ASSETS_IMPORT = "/assets-import",
   REPOSITORY_EXPORT = "/repository-export",
   GENERATE_DISTRIBUTOR_PAGES = "/generate-distributor-pages",
+  INFINITY_IQ = "/infinity-iq",
 }
 
 /**
@@ -35,7 +36,6 @@ export enum NextAction {
  */
 const nextActionRoute = (searchParams: URLSearchParams) => {
   const nextAction = searchParams.get(NEXT_ACTION_PARAM_NAME);
-  console.log("DUB DUB", nextAction);
   if (nextAction === NextAction.GENERATE_DISTRIBUTOR_PAGES) {
     return NextAction.GENERATE_DISTRIBUTOR_PAGES;
   }
@@ -44,6 +44,11 @@ const nextActionRoute = (searchParams: URLSearchParams) => {
     return NextAction.ASSETS_IMPORT;
   }
 
+  if (nextAction === NextAction.INFINITY_IQ) {
+    return NextAction.INFINITY_IQ;
+  }
+
+  console.log("Next action undefined. You will be redirected to repository export")
   return NextAction.REPOSITORY_EXPORT;
 };
 

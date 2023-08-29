@@ -303,7 +303,7 @@ const RepositoryExport = () => {
           );
 
           return asset.referencedBy.map((referencedBy) => {
-            
+
 
             return referencedBy.fields ?  {
               ...assetInPreparedAssets,
@@ -425,7 +425,7 @@ const RepositoryExport = () => {
 
     console.log(sites);
     setAvailableAssetTypes(assetTypesRes);
-    
+
     setLoading({
       types: false,
     });

@@ -8,11 +8,30 @@ export const fetchAllItems = async () => {
 
   return data;
 };
+const createURI = (
+    repositoryId: string,
+    type: string,
+    limit: number,
+    scrollParam: string,
+    options?: { onlyMaster?: boolean }
+): string => {
+  let baseURI = `/items?limit=${limit}&q=repositoryId eq "${repositoryId}" AND (type eq "${type}")`;
+
+  if (options?.onlyMaster) {
+    baseURI += ' AND (languageIsMaster eq "true")';
+  }
+
+  const scrollSettings = `&${scrollParam}&scrollTTL=5000`;
+
+  return baseURI + scrollSettings;
+}
+
 
 export const fetchAllItemsOfTypeFromRepositoryIdScroll = async (
   repositoryId: string,
   types: string[],
-  updateProgress?: (v: string) => void
+  updateProgress?: (v: string) => void,
+  options?: { onlyMaster?: boolean }
 ) => {
   const limit = 500;
 
@@ -32,9 +51,10 @@ export const fetchAllItemsOfTypeFromRepositoryIdScroll = async (
     let scrollId = "";
     while (true) {
       const scrollParam = scrollId ? `&scrollId=${scrollId}` : "scroll=true";
+      let URI = createURI(repositoryId, type, limit, scrollParam, options);
 
       const data = await axiosClient.get(
-        `/items?limit=${limit}&q=repositoryId eq "${repositoryId}" AND (type eq "${type}")&${scrollParam}&scrollTTL=5000`
+          URI
       );
 
       const parsedData = ResponseSchema.passthrough().parse(data?.data);
@@ -158,11 +178,19 @@ export const fetchAllItemsFromReposWithChineseLang = async (
   return items;
 };
 
-export const updateItem = async (itemID: string, payload: any) => {
+export const updateItem = async (itemID: string, payload: any, options?: {
+  onlyFields?: boolean
+}) => {
   try {
     const currentItem = await fetchItemByID(itemID);
     const newFields = { ...currentItem.fields, ...payload.fields };
-    const newPayload = { ...payload, fields: newFields };
+    let newPayload;
+    if(options?.onlyFields) {
+        newPayload = { fields: newFields };
+    } else {
+        newPayload = { ...payload, fields: newFields };
+    }
+    debugger
     const { data } = await axiosClient.put(
       `/items/${itemID}`,
       JSON.stringify({ ...currentItem, ...newPayload }),
@@ -216,16 +244,7 @@ export const getReferencedByForAsset = async (
     `/items/${assetId}?expand=relationships&includeAdditionalData=false&links=none`
   );
 
-  // console.log('DATA', data);
   funcToExecuteAfter && funcToExecuteAfter();
-
-  // const ResponseSchema = z.object({
-  //   hasMore: z.boolean(),
-  //   offset: z.number(),
-  //   count: z.number(),
-  //   limit: z.number(),
-  //   items: ItemsSchema,
-  // });
 
   return data;
 };

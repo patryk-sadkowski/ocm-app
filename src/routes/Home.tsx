@@ -34,6 +34,12 @@ const Home = () => {
         cardDescription="Generate distributor pages using Excel"
         nextAction={NextAction.GENERATE_DISTRIBUTOR_PAGES}
       />
+      <CardWithDescription
+        cardLink="/repositories"
+        cardTitle="Infinity IQ"
+        cardDescription="Generate distributor pages using Excel"
+        nextAction={NextAction.INFINITY_IQ}
+      />
     </SimpleGrid>
   );
 };

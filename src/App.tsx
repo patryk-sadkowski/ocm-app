@@ -11,6 +11,8 @@ import Login from "./routes/Login";
 import RepositoryExport from "./routes/RepositoryExport";
 import AssetsImport from "./routes/AssetsImport";
 import GenerateDistributorPages from "./routes/GenerateDistributorPages";
+import InfinityIQ from "./routes/InfinityIQ";
+import PasswordProtection from "./components/WithPasswordProtection";
 
 const withChakra = (Component: React.FC) => {
   return () => (
@@ -34,6 +36,11 @@ const App = () => {
           <Route path="/repository-export" element={<RepositoryExport />}></Route>
           <Route path="/assets-import" element={<AssetsImport />}></Route>
           <Route path="/generate-distributor-pages" element={<GenerateDistributorPages />}></Route>
+          <Route path="/infinity-iq" element={
+            <PasswordProtection password={"infinityiq"}>
+              <InfinityIQ />
+            </PasswordProtection>
+          }></Route>
         </Routes>
       </AuthProvider>
     </HashRouter>

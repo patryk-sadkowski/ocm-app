@@ -107,7 +107,7 @@ export const ItemSchema = z.object({
   description: z.string(),
   language: z.string(),
   type: z.string(),
-  fileExtension: z.string(),
+  fileExtension: z.string().optional(),
   repositoryId: z.string(),
   name: z.string(),
   id: z.string(),
@@ -134,4 +134,19 @@ export interface CtaLink {
   type: string;
   typeCategory: string;
   links: ItemLink[];
+}
+
+export interface IRFile {
+    fields: {
+      documentType: string | null;
+        documentName: string | null;
+        documentLanguage: string | null;
+        categoryLevel1: string | null;
+        productCategory: string | null;
+        categoryLevel3: string | null;
+        categoryLevel4: string | null;
+        wgAmt: string | null;
+        industryL1: string | null;
+        industryL2: string | null;
+    }
 }
